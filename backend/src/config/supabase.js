@@ -1,0 +1,14 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.warn('Supabase credentials missing. Video upload will fail until SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.');
+}
+
+export const supabase = supabaseUrl && supabaseServiceKey
+  ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+  : null;
+
+export const BUCKET_HIGHLIGHTS = 'highlight-videos';
