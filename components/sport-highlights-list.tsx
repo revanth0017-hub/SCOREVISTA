@@ -6,10 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Play, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 
+type SportDoc = { _id: string; slug: string; name: string };
+
 interface HighlightDoc {
   _id: string;
   title: string;
-  sport: string;
+  sport: string; // ObjectId
   date?: string;
   views?: number;
   duration?: string;
@@ -20,29 +22,31 @@ interface HighlightDoc {
 export function SportHighlightsList({ sport }: { sport: string }) {
   const [list, setList] = useState<HighlightDoc[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError(null);
-    api
-      .get<{ success?: boolean; data?: HighlightDoc[] }>(`/api/highlights?sport=${encodeURIComponent(sport)}`)
-      .then((res) => {
-        if (!cancelled) {
-          const data = (res as { data?: HighlightDoc[] }).data ?? [];
-          setList(data);
+    (async () => {
+      try {
+        const sports = await api.get<{ success: boolean; data: SportDoc[] }>('/api/sports');
+        const sportList = (sports as { data?: SportDoc[] }).data || [];
+        const s = sportList.find((x) => x.slug === sport.toLowerCase());
+        if (!s?._id) {
+          if (!cancelled) setList([]);
+          return;
         }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setList([]);
-          setError(err instanceof Error ? err.message : 'Unable to load. Is the backend running on port 5001?');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+
+        const res = await api.get<{ success?: boolean; data?: HighlightDoc[] }>(
+          `/api/highlights?sportId=${encodeURIComponent(s._id)}`
+        );
+        const data = (res as { data?: HighlightDoc[] }).data ?? [];
+        if (!cancelled) setList(data);
+      } catch {
+        if (!cancelled) setList([]);
+      }
+    })().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -54,17 +58,6 @@ export function SportHighlightsList({ sport }: { sport: string }) {
         <Loader2 className="w-8 h-8 animate-spin mr-2" />
         Loading highlights...
       </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card className="bg-card border-border border-amber-500/50">
-        <CardContent className="pt-6 text-center py-12">
-          <p className="text-amber-600 dark:text-amber-400 mb-2">{error}</p>
-          <p className="text-sm text-muted-foreground">Start the backend with: cd backend && npm run dev</p>
-        </CardContent>
-      </Card>
     );
   }
 

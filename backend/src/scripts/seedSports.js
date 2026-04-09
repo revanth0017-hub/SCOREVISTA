@@ -3,13 +3,13 @@ import mongoose from 'mongoose';
 import Sport from '../models/Sport.js';
 
 const sports = [
-  { name: 'Cricket', slug: 'cricket', icon: '🏏' },
-  { name: 'Football', slug: 'football', icon: '⚽' },
-  { name: 'Basketball', slug: 'basketball', icon: '🏀' },
-  { name: 'Volleyball', slug: 'volleyball', icon: '🏐' },
-  { name: 'Kabaddi', slug: 'kabaddi', icon: '🤼' },
-  { name: 'Shuttle', slug: 'shuttle', icon: '🏸' },
-  { name: 'Tennis', slug: 'tennis', icon: '🎾' },
+  { name: 'Cricket', slug: 'cricket', icon: '🏏', adminAssigned: false },
+  { name: 'Football', slug: 'football', icon: '⚽', adminAssigned: false },
+  { name: 'Basketball', slug: 'basketball', icon: '🏀', adminAssigned: false },
+  { name: 'Volleyball', slug: 'volleyball', icon: '🏐', adminAssigned: false },
+  { name: 'Kabaddi', slug: 'kabaddi', icon: '🤼', adminAssigned: false },
+  { name: 'Shuttle', slug: 'shuttle', icon: '🏸', adminAssigned: false },
+  { name: 'Tennis', slug: 'tennis', icon: '🎾', adminAssigned: false },
 ];
 
 async function seed() {

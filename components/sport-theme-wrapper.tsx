@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { usePathname } from 'next/navigation';
 import { getAdminSport } from '@/lib/admin-sport';
 import type { SportId } from '@/lib/sport-theme';
@@ -12,10 +13,20 @@ import type { SportId } from '@/lib/sport-theme';
  */
 export function SportThemeWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const sport = resolveSport(pathname);
+  // we deliberately compute sport on the client only to avoid mismatches
+  // during SSR (server doesn't know admin sport). start with a neutral value
+  // and update once the pathname / storage is available.
+  const [sport, setSport] = React.useState<SportId | 'all'>('all');
+
+  React.useEffect(() => {
+    setSport(resolveSport(pathname));
+  }, [pathname]);
 
   return (
-    <div data-sport={sport} className="min-h-screen transition-colors duration-300">
+    <div
+      data-sport={sport}
+      suppressHydrationWarning
+      className="min-h-screen transition-colors duration-300">
       {children}
     </div>
   );

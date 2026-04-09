@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AdminSidebar } from '@/components/admin-sidebar';
 import { getAdminSport, setAdminSport } from '@/lib/admin-sport';
@@ -27,7 +27,7 @@ const SPORT_EMOJI: Record<string, string> = {
 interface HighlightDoc {
   _id: string;
   title: string;
-  sport: string;
+  sport: string; // ObjectId
   date?: string;
   views?: number;
   duration?: string;
@@ -37,6 +37,8 @@ interface HighlightDoc {
   createdAt?: string;
   updatedAt?: string;
 }
+
+type SportDoc = { _id: string; slug: string; name: string };
 
 /** Local form / list item (id for edit/delete) */
 interface Highlight {
@@ -57,11 +59,11 @@ function docToHighlight(d: HighlightDoc): Highlight {
   return {
     id: d._id,
     title: d.title,
-    sport: d.sport.charAt(0).toUpperCase() + d.sport.slice(1),
+    sport: d.sport, // keep id; UI will show based on selected sport
     date: d.date || new Date().toISOString().split('T')[0],
     views: d.views ?? 0,
     duration: d.duration || '0:00',
-    thumbnail: d.thumbnailUrl || SPORT_EMOJI[d.sport] || '🏆',
+    thumbnail: d.thumbnailUrl || '🏆',
     description: d.description || '',
     videoUrl: d.videoUrl,
   };
@@ -98,11 +100,12 @@ export default function AdminHighlightsPage() {
   }, [fromUrl]);
 
   const sportEmoji = SPORT_EMOJI[sport] || '🏆';
+  const sportSlug = useMemo(() => sport.toLowerCase(), [sport]);
 
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [sportId, setSportId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [videoInputType, setVideoInputType] = useState<'file' | 'url'>('url');
@@ -122,20 +125,29 @@ export default function AdminHighlightsPage() {
 
   const fetchHighlights = useCallback(async () => {
     setLoading(true);
-    setFetchError(null);
     try {
+      const sportsRes = await api.get<{ success: boolean; data: SportDoc[] }>('/api/sports');
+      const sports = (sportsRes as { data?: SportDoc[] }).data || [];
+      const s = sports.find((x) => x.slug === sportSlug);
+      if (!s?._id) {
+        setSportId(null);
+        setHighlights([]);
+        return;
+      }
+      setSportId(s._id);
+
       const res = await api.get<{ success: boolean; data: HighlightDoc[] }>(
-        `/api/highlights?sport=${encodeURIComponent(sport)}`
+        `/api/highlights?sportId=${encodeURIComponent(s._id)}`
       );
       const list = (res as { data?: HighlightDoc[] }).data ?? [];
       setHighlights(list.map(docToHighlight));
-    } catch (err) {
+    } catch {
+      setSportId(null);
       setHighlights([]);
-      setFetchError(err instanceof Error ? err.message : 'Cannot load highlights. Is the backend running on port 5001?');
     } finally {
       setLoading(false);
     }
-  }, [sport]);
+  }, [sportSlug]);
 
   useEffect(() => {
     fetchHighlights();
@@ -221,9 +233,8 @@ export default function AdminHighlightsPage() {
       setSaveError('Title is required');
       return;
     }
-    const sportVal = formData.sport.trim().toLowerCase();
-    if (!sportVal) {
-      setSaveError('Sport is required');
+    if (!sportId) {
+      setSaveError('Sport is not ready yet');
       return;
     }
     const hasVideo = videoInputType === 'file' ? formData.videoFile : formData.videoUrl?.trim();
@@ -237,7 +248,7 @@ export default function AdminHighlightsPage() {
       if (editingId !== null) {
         await api.patch(`/api/highlights/${editingId}`, {
           title: formData.title.trim(),
-          sport: sportVal,
+          sportId,
           description: formData.description.trim() || undefined,
           duration: formData.duration.trim() || undefined,
           date: formData.date || undefined,
@@ -248,7 +259,7 @@ export default function AdminHighlightsPage() {
       } else {
         const fd = new FormData();
         fd.append('title', formData.title.trim());
-        fd.append('sport', sportVal);
+        fd.append('sportId', sportId);
         if (formData.description.trim()) fd.append('description', formData.description.trim());
         if (formData.duration.trim()) fd.append('duration', formData.duration.trim());
         if (formData.date) fd.append('date', formData.date);
@@ -536,18 +547,12 @@ export default function AdminHighlightsPage() {
 
           {/* Highlights List */}
           <div className="grid gap-4">
-            {fetchError && (
-              <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 text-amber-700 dark:text-amber-400">
-                <p>{fetchError}</p>
-                <p className="text-sm mt-1 text-muted-foreground">Run: cd backend && npm run dev</p>
-              </div>
-            )}
             {loading ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground">
                 <Loader2 className="w-8 h-8 animate-spin mr-2" />
                 Loading highlights...
               </div>
-            ) : !fetchError && highlights.length === 0 ? (
+            ) : highlights.length === 0 ? (
               <p className="text-muted-foreground py-8 text-center">No highlights yet. Add one above.</p>
             ) : null}
             {!loading && highlights.map((highlight) => (

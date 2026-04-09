@@ -4,6 +4,8 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 
 import { connectDB } from './config/db.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -20,7 +22,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 61234;
 
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const origins = corsOrigin.split(',').map((o) => o.trim());
@@ -51,7 +53,34 @@ app.use(errorHandler);
 
 async function start() {
   await connectDB();
-  app.listen(PORT, () => {
+  const server = http.createServer(app);
+  const io = new SocketIOServer(server, {
+    cors: {
+      // Be permissive in dev so socket works on 3000/3001, etc.
+      origin: true,
+      credentials: true,
+    },
+  });
+
+  io.on('connection', (socket) => {
+    // Client can optionally join a sport room: { sportId }
+    socket.on('joinSport', ({ sportId } = {}) => {
+      if (sportId) socket.join(`sport:${sportId}`);
+    });
+  });
+
+  app.set('io', io);
+
+  server.on('error', (err) => {
+    if (err?.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Stop the other process or change backend/.env PORT.`);
+      process.exit(1);
+    }
+    console.error('Server error:', err);
+    process.exit(1);
+  });
+
+  server.listen(PORT, () => {
     console.log(`ScoreVista backend running on port ${PORT}`);
   });
 }

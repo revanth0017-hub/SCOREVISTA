@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft } from 'lucide-react';
 import { api, setToken, setUser } from '@/lib/api';
+import { safeActionError } from '@/lib/client-errors';
 
 type LoginMode = 'regular' | 'code';
 
@@ -20,7 +21,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
+  // adminPassword is no longer required or used
   const [adminCode, setAdminCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,10 +32,7 @@ export default function LoginPage() {
       setError('Please enter your email');
       return;
     }
-    if (!adminPassword) {
-      setError('Please enter your password');
-      return;
-    }
+    // password not required for admin login
     if (!adminCode.trim()) {
       setError('Please enter your admin code');
       return;
@@ -46,7 +44,6 @@ export default function LoginPage() {
         '/api/auth/admin/login',
         { 
           email: adminEmail.trim(),
-          password: adminPassword,
           adminCode: adminCode.trim().toUpperCase() 
         }
       );
@@ -60,7 +57,7 @@ export default function LoginPage() {
         setError('Login failed. Please try again.');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid credentials');
+      setError(safeActionError(err, 'Unable to sign in. Check your connection and try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -85,7 +82,7 @@ export default function LoginPage() {
         setError('Login failed. Please try again.');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid email or password');
+      setError(safeActionError(err, 'Unable to sign in. Check your connection and try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -195,17 +192,6 @@ export default function LoginPage() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Password</label>
-                  <Input
-                    type="password"
-                    placeholder="••••••••"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    required
-                    className="bg-card border-border"
-                  />
-                </div>
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Admin Code</label>

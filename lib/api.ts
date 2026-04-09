@@ -7,8 +7,16 @@ const TOKEN_KEY = 'scorevista_token';
 const USER_KEY = 'scorevista_user';
 
 export function getApiUrl(): string {
-  const url = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-  return url.replace(/\/$/, '');
+  // Use explicit env var when provided (e.g. for dev/prod builds).
+  // Otherwise, fall back to the browser origin so the frontend can talk to a same-origin API.
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl) return envUrl.replace(/\/$/, '');
+
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+
+  return 'http://localhost:5001';
 }
 
 export function getToken(): string | null {
@@ -49,7 +57,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message = (data as { message?: string })?.message || res.statusText || 'Request failed';
-    throw new Error(message);
+    const error: any = new Error(message);
+    // propagate any additional info such as a field name for duplicate errors
+    if (data && typeof data === 'object' && 'field' in data) {
+      error.field = (data as any).field;
+    }
+    throw error;
   }
   return data as T;
 }
@@ -67,6 +80,16 @@ export const api = {
   async postJson<T = unknown>(path: string, body: unknown, options?: RequestInit): Promise<T> {
     const res = await fetch(`${getApiUrl()}${path}`, {
       method: 'POST',
+      ...options,
+      headers: { ...authHeaders(), ...options?.headers },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<T>(res);
+  },
+
+  async putJson<T = unknown>(path: string, body: unknown, options?: RequestInit): Promise<T> {
+    const res = await fetch(`${getApiUrl()}${path}`, {
+      method: 'PUT',
       ...options,
       headers: { ...authHeaders(), ...options?.headers },
       body: JSON.stringify(body),

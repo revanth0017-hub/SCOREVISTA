@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,48 +14,140 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AdminPageHeader } from '@/components/admin-page-header';
+import { api } from '@/lib/api';
+import { messageIfWorthShowing, safeActionError } from '@/lib/client-errors';
 
 export interface MatchRow {
-  id: number;
-  team1: string;
-  team2: string;
+  id: string;
+  sportId: string;
+  teamAId: string;
+  teamBId: string;
+  teamAName: string;
+  teamBName: string;
   date: string;
   time: string;
   venue: string;
   status: string;
+  scoreA?: number;
+  scoreB?: number;
 }
 
-const defaultMatches: MatchRow[] = [
-  { id: 1, team1: 'India', team2: 'Australia', date: '2024-02-15', time: '2:30 PM', status: 'upcoming', venue: 'MCG' },
-  { id: 2, team1: 'England', team2: 'Pakistan', date: '2024-02-10', time: '3:00 PM', status: 'completed', venue: "Lord's" },
-  { id: 3, team1: 'Sri Lanka', team2: 'West Indies', date: '2024-02-18', time: '2:00 PM', status: 'upcoming', venue: 'Eden Gardens' },
-];
+type SportDoc = { _id: string; slug: string; name: string };
+type TeamDoc = { _id: string; name: string };
+type MatchDoc = {
+  _id: string;
+  sport: string;
+  teamA: TeamDoc | string;
+  teamB: TeamDoc | string;
+  venue?: string;
+  date?: string;
+  time?: string;
+  status?: string;
+  scoreA?: number;
+  scoreB?: number;
+};
 
 interface AdminManageMatchesProps {
   sport: string;
   sportIcon: string;
-  initialMatches?: MatchRow[];
 }
 
-export function AdminManageMatches({ sport, sportIcon, initialMatches = defaultMatches }: AdminManageMatchesProps) {
-  const [matches, setMatches] = useState<MatchRow[]>(initialMatches);
+export function AdminManageMatches({ sport, sportIcon }: AdminManageMatchesProps) {
+  const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [teams, setTeams] = useState<TeamDoc[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingMatch, setEditingMatch] = useState<MatchRow | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sportId, setSportId] = useState<string | null>(null);
   const [form, setForm] = useState({
-    team1: '',
-    team2: '',
+    teamAId: '',
+    teamBId: '',
     date: new Date().toISOString().split('T')[0],
     time: '',
     venue: '',
     status: 'upcoming',
   });
 
+  const sportSlug = useMemo(() => sport.toLowerCase(), [sport]);
+
+  const fetchSportId = async () => {
+    const res = await api.get<{ success: boolean; data: SportDoc[] }>('/api/sports');
+    const list = (res as { data?: SportDoc[] }).data || [];
+    const s = list.find((x) => x.slug === sportSlug);
+    return s?._id || null;
+  };
+
+  const fetchTeams = async (sid: string) => {
+    const res = await api.get<{ success: boolean; data: TeamDoc[] }>(`/api/teams?sportId=${encodeURIComponent(sid)}`);
+    const list = (res as { data?: TeamDoc[] }).data || [];
+    setTeams(list);
+    return list;
+  };
+
+  const toRow = (m: MatchDoc): MatchRow => {
+    const teamA = typeof m.teamA === 'string' ? { _id: m.teamA, name: 'Team A' } : m.teamA;
+    const teamB = typeof m.teamB === 'string' ? { _id: m.teamB, name: 'Team B' } : m.teamB;
+    return {
+      id: m._id,
+      sportId: m.sport,
+      teamAId: teamA._id,
+      teamBId: teamB._id,
+      teamAName: teamA.name,
+      teamBName: teamB.name,
+      date: m.date || new Date().toISOString().split('T')[0],
+      time: m.time || '',
+      venue: m.venue || '',
+      status: m.status || 'upcoming',
+      scoreA: m.scoreA ?? 0,
+      scoreB: m.scoreB ?? 0,
+    };
+  };
+
+  const fetchMatches = async (sid: string) => {
+    const res = await api.get<{ success: boolean; data: MatchDoc[] }>(`/api/matches?sportId=${encodeURIComponent(sid)}`);
+    const list = (res as { data?: MatchDoc[] }).data || [];
+    setMatches(list.map(toRow));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const sid = await fetchSportId();
+        if (!sid) {
+          if (!cancelled) {
+            setSportId(null);
+            setTeams([]);
+            setMatches([]);
+          }
+          return;
+        }
+        if (!cancelled) setSportId(sid);
+        await fetchTeams(sid);
+        await fetchMatches(sid);
+      } catch (err) {
+        if (!cancelled) {
+          setSportId(null);
+          setTeams([]);
+          setMatches([]);
+          const msg = messageIfWorthShowing(err);
+          if (msg) setError(msg);
+        }
+      }
+    })().finally(() => !cancelled && setIsLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [sportSlug]);
+
   const openAdd = () => {
     setForm({
-      team1: '',
-      team2: '',
+      teamAId: '',
+      teamBId: '',
       date: new Date().toISOString().split('T')[0],
       time: '',
       venue: '',
@@ -64,13 +156,14 @@ export function AdminManageMatches({ sport, sportIcon, initialMatches = defaultM
     setEditingMatch(null);
     setShowAddModal(true);
     setShowEditModal(false);
+    setError(null);
   };
 
   const openEdit = (match: MatchRow) => {
     setEditingMatch(match);
     setForm({
-      team1: match.team1,
-      team2: match.team2,
+      teamAId: match.teamAId,
+      teamBId: match.teamBId,
       date: match.date,
       time: match.time,
       venue: match.venue,
@@ -78,50 +171,56 @@ export function AdminManageMatches({ sport, sportIcon, initialMatches = defaultM
     });
     setShowEditModal(true);
     setShowAddModal(false);
+    setError(null);
   };
 
   const saveMatch = async () => {
-    if (!form.team1?.trim() || !form.team2?.trim()) {
-      alert('Please enter both team names.');
-      return;
-    }
-    if (form.team1 === form.team2) {
-      alert('Teams cannot be the same.');
-      return;
-    }
+    if (!sportId) return;
+    if (!form.teamAId || !form.teamBId) return setError('Please select both teams');
+    if (form.teamAId === form.teamBId) return setError('Teams cannot be the same');
     if (!form.venue?.trim()) {
-      alert('Please enter a venue.');
-      return;
+      return setError('Please enter a venue.');
     }
     setIsLoading(true);
+    setError(null);
     try {
-      await new Promise((r) => setTimeout(r, 600));
       if (showEditModal && editingMatch) {
-        setMatches(matches.map((m) => (m.id === editingMatch.id ? { ...editingMatch, ...form } : m)));
-        alert(`Match updated successfully for ${sport}!`);
+        await api.patch(`/api/matches/${editingMatch.id}`, {
+          venue: form.venue,
+          date: form.date,
+          time: form.time,
+          status: form.status,
+        });
         setShowEditModal(false);
       } else {
-        const newId = Math.max(0, ...matches.map((m) => m.id)) + 1;
-        setMatches([...matches, { id: newId, ...form }]);
-        alert(`Match added successfully to ${sport}!`);
+        await api.postJson('/api/matches', {
+          sportId,
+          teamAId: form.teamAId,
+          teamBId: form.teamBId,
+          venue: form.venue,
+          date: form.date,
+          time: form.time,
+          status: form.status,
+        });
         setShowAddModal(false);
       }
-    } catch {
-      alert('Error saving match. Please try again.');
+      await fetchMatches(sportId);
+    } catch (err) {
+      setError(safeActionError(err, 'Unable to save the match. Please try again.'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const deleteMatch = async (id: number) => {
+  const deleteMatch = async (id: string) => {
     if (!confirm('Are you sure you want to delete this match?')) return;
+    if (!sportId) return;
     setIsLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 400));
-      setMatches(matches.filter((m) => m.id !== id));
-      alert('Match deleted successfully.');
-    } catch {
-      alert('Error deleting match.');
+      await api.delete(`/api/matches/${id}`);
+      await fetchMatches(sportId);
+    } catch (err) {
+      setError(safeActionError(err, 'Unable to delete the match.'));
     } finally {
       setIsLoading(false);
     }
@@ -138,6 +237,11 @@ export function AdminManageMatches({ sport, sportIcon, initialMatches = defaultM
       />
 
       <main className="flex-1 overflow-auto p-8 space-y-8">
+        {error && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">
+            {error}
+          </div>
+        )}
         <div className="grid md:grid-cols-4 gap-6">
           <Card className="bg-card border-border">
             <CardContent className="pt-6">
@@ -194,7 +298,7 @@ export function AdminManageMatches({ sport, sportIcon, initialMatches = defaultM
                     <tr key={match.id} className="border-b border-border hover:bg-background/50 transition">
                       <td className="py-4 px-4">
                         <div className="font-semibold">
-                          {match.team1} <span className="text-muted-foreground">vs</span> {match.team2}
+                          {match.teamAName} <span className="text-muted-foreground">vs</span> {match.teamBName}
                         </div>
                       </td>
                       <td className="py-4 px-4">
@@ -263,19 +367,29 @@ export function AdminManageMatches({ sport, sportIcon, initialMatches = defaultM
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Team 1 *</label>
-                <Input
-                  value={form.team1}
-                  onChange={(e) => setForm({ ...form, team1: e.target.value })}
-                  placeholder="Team 1 name"
-                />
+                <select
+                  value={form.teamAId}
+                  onChange={(e) => setForm({ ...form, teamAId: e.target.value })}
+                  className="w-full px-3 py-2 bg-background border border-input rounded-md"
+                >
+                  <option value="">Select team</option>
+                  {teams.map((t) => (
+                    <option key={t._id} value={t._id}>{t.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Team 2 *</label>
-                <Input
-                  value={form.team2}
-                  onChange={(e) => setForm({ ...form, team2: e.target.value })}
-                  placeholder="Team 2 name"
-                />
+                <select
+                  value={form.teamBId}
+                  onChange={(e) => setForm({ ...form, teamBId: e.target.value })}
+                  className="w-full px-3 py-2 bg-background border border-input rounded-md"
+                >
+                  <option value="">Select team</option>
+                  {teams.map((t) => (
+                    <option key={t._id} value={t._id}>{t.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
             <div>

@@ -2,23 +2,23 @@ import mongoose from 'mongoose';
 
 const matchSchema = new mongoose.Schema(
   {
-    team1: { type: String, required: true, trim: true },
-    team2: { type: String, required: true, trim: true },
-    sport: { type: String, required: true, trim: true, lowercase: true },
+    sport: { type: mongoose.Schema.Types.ObjectId, ref: 'Sport', required: true, index: true },
+    teamA: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', required: true, index: true },
+    teamB: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', required: true, index: true },
     venue: { type: String, trim: true },
     date: { type: String, trim: true },
     time: { type: String, trim: true },
-    status: { type: String, enum: ['upcoming', 'live', 'completed'], default: 'upcoming' },
-    score1: { type: Number, default: 0 },
-    score2: { type: Number, default: 0 },
-    overs1: { type: String, trim: true },
-    overs2: { type: String, trim: true },
+    status: { type: String, enum: ['upcoming', 'live', 'completed'], default: 'upcoming', index: true },
+    scoreA: { type: Number, default: 0 },
+    scoreB: { type: Number, default: 0 },
+    oversA: { type: String, trim: true },
+    oversB: { type: String, trim: true },
     extraInfo: { type: String, trim: true },
   },
   { timestamps: true }
 );
 
-matchSchema.index({ sport: 1 });
-matchSchema.index({ status: 1 });
+matchSchema.index({ sport: 1, status: 1, date: -1 });
+matchSchema.index({ teamA: 1, teamB: 1, date: -1 });
 
 export default mongoose.model('Match', matchSchema);

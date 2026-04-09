@@ -6,7 +6,7 @@ export async function list(req, res, next) {
     const filter = {};
     if (active !== undefined) filter.isActive = active === 'true';
     const list = await Sport.find(filter).sort({ name: 1 }).lean();
-    res.json({ success: true, data: list });
+    res.json({ success: true, data: list, message: 'Sports fetched' });
   } catch (err) {
     next(err);
   }
@@ -35,7 +35,7 @@ export async function create(req, res, next) {
       description,
       isActive: isActive !== false,
     });
-    res.status(201).json({ success: true, data: doc });
+    res.status(201).json({ success: true, data: doc, message: 'Sport created' });
   } catch (err) {
     next(err);
   }

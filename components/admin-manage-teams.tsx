@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,9 +14,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AdminPageHeader } from '@/components/admin-page-header';
+import { api } from '@/lib/api';
+import { messageIfWorthShowing, safeActionError } from '@/lib/client-errors';
 
 export interface TeamRow {
-  id: number;
+  id: string;
   name: string;
   players: number;
   wins: number;
@@ -24,25 +26,29 @@ export interface TeamRow {
   captain: string;
 }
 
-const defaultTeams: TeamRow[] = [
-  { id: 1, name: 'Team A', players: 11, wins: 5, losses: 2, captain: 'John Doe' },
-  { id: 2, name: 'Team B', players: 11, wins: 4, losses: 3, captain: 'Jane Smith' },
-  { id: 3, name: 'Team C', players: 10, wins: 6, losses: 1, captain: 'Mike Johnson' },
-  { id: 4, name: 'Team D', players: 11, wins: 3, losses: 4, captain: 'Sarah Williams' },
-];
+type SportDoc = { _id: string; slug: string; name: string };
+type TeamDoc = {
+  _id: string;
+  name: string;
+  players?: number;
+  wins?: number;
+  losses?: number;
+  captain?: string;
+};
 
 interface AdminManageTeamsProps {
   sport: string;
   sportIcon: string;
-  initialTeams?: TeamRow[];
 }
 
-export function AdminManageTeams({ sport, sportIcon, initialTeams = defaultTeams }: AdminManageTeamsProps) {
-  const [teams, setTeams] = useState<TeamRow[]>(initialTeams);
+export function AdminManageTeams({ sport, sportIcon }: AdminManageTeamsProps) {
+  const [teams, setTeams] = useState<TeamRow[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTeam, setEditingTeam] = useState<TeamRow | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sportId, setSportId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: '',
     players: 11,
@@ -51,11 +57,62 @@ export function AdminManageTeams({ sport, sportIcon, initialTeams = defaultTeams
     captain: '',
   });
 
+  const sportSlug = useMemo(() => sport.toLowerCase(), [sport]);
+
+  const fetchTeams = async (sid: string) => {
+    const res = await api.get<{ success: boolean; data: TeamDoc[] }>(`/api/teams?sportId=${encodeURIComponent(sid)}`);
+    const list = (res as { data?: TeamDoc[] }).data || [];
+    setTeams(
+      list.map((t) => ({
+        id: t._id,
+        name: t.name,
+        players: t.players ?? 0,
+        wins: t.wins ?? 0,
+        losses: t.losses ?? 0,
+        captain: t.captain ?? '',
+      }))
+    );
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    api
+      .get<{ success: boolean; data: SportDoc[] }>('/api/sports')
+      .then((res) => {
+        const list = (res as { data?: SportDoc[] }).data || [];
+        const s = list.find((x) => x.slug === sportSlug);
+        if (!cancelled) setSportId(s?._id || null);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSportId(null);
+          const msg = messageIfWorthShowing(err);
+          if (msg) setError(msg);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sportSlug]);
+
+  useEffect(() => {
+    if (!sportId) return;
+    setIsLoading(true);
+    fetchTeams(sportId)
+      .catch((err) => {
+        const msg = messageIfWorthShowing(err);
+        if (msg) setError(msg);
+      })
+      .finally(() => setIsLoading(false));
+  }, [sportId]);
+
   const openAdd = () => {
     setForm({ name: '', players: 11, wins: 0, losses: 0, captain: '' });
     setEditingTeam(null);
     setShowAddModal(true);
     setShowEditModal(false);
+    setError(null);
   };
 
   const openEdit = (team: TeamRow) => {
@@ -69,6 +126,7 @@ export function AdminManageTeams({ sport, sportIcon, initialTeams = defaultTeams
     });
     setShowEditModal(true);
     setShowAddModal(false);
+    setError(null);
   };
 
   const saveTeam = async () => {
@@ -80,36 +138,39 @@ export function AdminManageTeams({ sport, sportIcon, initialTeams = defaultTeams
       alert('Please enter a valid number of players.');
       return;
     }
+    if (!sportId) {
+      setError('Sport is not ready yet');
+      return;
+    }
     setIsLoading(true);
+    setError(null);
     try {
-      await new Promise((r) => setTimeout(r, 600));
       if (showEditModal && editingTeam) {
-        setTeams(teams.map((t) => (t.id === editingTeam.id ? { ...editingTeam, ...form } : t)));
-        alert(`Team "${form.name}" updated successfully for ${sport}!`);
+        await api.patch(`/api/teams/${editingTeam.id}`, { ...form });
         setShowEditModal(false);
       } else {
-        const newId = Math.max(0, ...teams.map((t) => t.id)) + 1;
-        setTeams([...teams, { id: newId, ...form }]);
-        alert(`Team "${form.name}" added successfully to ${sport}!`);
+        await api.postJson('/api/teams', { ...form, sportId });
         setShowAddModal(false);
       }
-    } catch {
-      alert('Error saving team. Please try again.');
+      await fetchTeams(sportId);
+    } catch (err) {
+      setError(safeActionError(err, 'Unable to save the team. Please try again.'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const deleteTeam = async (id: number) => {
+  const deleteTeam = async (id: string) => {
     const team = teams.find((t) => t.id === id);
     if (!confirm(`Are you sure you want to delete team "${team?.name}"?`)) return;
+    if (!sportId) return;
     setIsLoading(true);
+    setError(null);
     try {
-      await new Promise((r) => setTimeout(r, 400));
-      setTeams(teams.filter((t) => t.id !== id));
-      alert('Team deleted successfully.');
-    } catch {
-      alert('Error deleting team.');
+      await api.delete(`/api/teams/${id}`);
+      await fetchTeams(sportId);
+    } catch (err) {
+      setError(safeActionError(err, 'Unable to delete the team.'));
     } finally {
       setIsLoading(false);
     }
@@ -126,6 +187,11 @@ export function AdminManageTeams({ sport, sportIcon, initialTeams = defaultTeams
       />
 
       <div className="p-8 space-y-8">
+        {error && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">
+            {error}
+          </div>
+        )}
         <div className="grid md:grid-cols-2 gap-6">
           {teams.map((team) => (
             <Card key={team.id} className="bg-card border-border hover:shadow-lg transition">

@@ -3,40 +3,7 @@
 import { Sidebar } from '@/components/sidebar';
 import { TopNav } from '@/components/top-nav';
 import { SportPageHeader } from '@/components/sport-page-header';
-import { LiveMatchCard } from '@/components/live-match-card';
-
-const LIVE_MATCHES = [
-  {
-    id: '1',
-    team1: 'Saina Nehwal',
-    team2: 'PV Sindhu',
-    score1: '21',
-    score2: '18',
-    status: 'live',
-    venue: 'Aakash Stadium',
-    startTime: 'Set 2 - 8:5',
-  },
-  {
-    id: '2',
-    team1: 'Kidambi Srikanth',
-    team2: 'Sai Praneeth',
-    score1: '15',
-    score2: '12',
-    status: 'live',
-    venue: 'Delhi Sports Complex',
-    startTime: 'Set 1 - 15:12',
-  },
-  {
-    id: '3',
-    team1: 'Treesa Jolly',
-    team2: 'Ashwini Ponnappa',
-    score1: '0',
-    score2: '0',
-    status: 'upcoming',
-    venue: 'Chennai Stadium',
-    startTime: '5:30 PM',
-  },
-];
+import { SportMatchesList } from '@/components/sport-matches-list';
 
 export default function ShuttleLivePage() {
   return (
@@ -55,23 +22,7 @@ export default function ShuttleLivePage() {
               <h2 className="text-2xl font-bold text-foreground mb-1">Live Matches</h2>
               <p className="text-muted-foreground text-sm">Track all badminton matches in real-time</p>
             </div>
-
-            {/* Featured Live Match */}
-            {LIVE_MATCHES[0] && (
-              <LiveMatchCard match={LIVE_MATCHES[0]} sport="shuttle" featured={true} />
-            )}
-
-            {/* All Matches Section */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-foreground mb-1">All Matches</h2>
-              <p className="text-sm text-muted-foreground">View complete match schedule</p>
-            </div>
-            
-            <div className="grid gap-4">
-              {LIVE_MATCHES.map((match) => (
-                <LiveMatchCard key={match.id} match={match} sport="shuttle" />
-              ))}
-            </div>
+            <SportMatchesList sport="shuttle" />
           </div>
         </main>
       </div>

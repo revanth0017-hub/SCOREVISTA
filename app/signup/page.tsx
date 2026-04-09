@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Check, Copy } from 'lucide-react';
 import { api, setToken, setUser } from '@/lib/api';
+import { safeActionError } from '@/lib/client-errors';
 
 const SPORTS = [
   'Cricket',
@@ -124,8 +125,21 @@ export default function SignupPage() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Signup failed. Please try again.');
       console.error('Signup error:', err);
+      if (err instanceof Error) {
+        const field = (err as { field?: string }).field;
+        if (field === 'email') {
+          setError('An account with that email already exists');
+        } else if (field === 'adminCode' || field === 'code') {
+          setError('Generated admin code already exists; please retry');
+        } else if (field) {
+          setError(`A record with that ${field} already exists`);
+        } else {
+          setError(safeActionError(err, 'Signup failed. Please try again.'));
+        }
+      } else {
+        setError('Signup failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

@@ -1,12 +1,18 @@
+import mongoose from 'mongoose';
 import Team from '../models/Team.js';
+import Sport from '../models/Sport.js';
 
 export async function list(req, res, next) {
   try {
-    const { sport } = req.query;
-    const filter = {};
-    if (sport) filter.sport = sport.trim().toLowerCase();
-    const list = await Team.find(filter).sort({ name: 1 }).lean();
-    res.json({ success: true, data: list });
+    const { sportId } = req.query;
+    if (!sportId) {
+      return res.status(400).json({ success: false, message: 'sportId query param is required' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(sportId)) {
+      return res.status(400).json({ success: false, message: 'Invalid sportId' });
+    }
+    const list = await Team.find({ sport: sportId }).sort({ name: 1 }).lean();
+    res.json({ success: true, data: list, message: 'Teams fetched' });
   } catch (err) {
     next(err);
   }
@@ -24,21 +30,25 @@ export async function getOne(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const { name, sport, players, matches, wins, losses, captain, description } = req.body;
-    if (!name) return res.status(400).json({ success: false, message: 'Name required' });
-    const sportLower = (sport || req.sport || '').trim().toLowerCase();
-    if (!sportLower) return res.status(400).json({ success: false, message: 'Sport required' });
+    const { name, sportId, players, matchesPlayed, wins, losses, captain, description } = req.body;
+    if (!name?.trim()) return res.status(400).json({ success: false, message: 'Name required' });
+    if (!sportId) return res.status(400).json({ success: false, message: 'sportId required' });
+    if (!mongoose.Types.ObjectId.isValid(sportId)) {
+      return res.status(400).json({ success: false, message: 'Invalid sportId' });
+    }
+    const sportDoc = await Sport.findById(sportId).lean();
+    if (!sportDoc) return res.status(404).json({ success: false, message: 'Sport not found' });
     const doc = await Team.create({
-      name,
-      sport: sportLower,
+      name: name.trim(),
+      sport: sportId,
       players: Number(players) || 0,
-      matches: Number(matches) || 0,
+      matchesPlayed: Number(matchesPlayed) || 0,
       wins: Number(wins) || 0,
       losses: Number(losses) || 0,
       captain,
       description,
     });
-    res.status(201).json({ success: true, data: doc });
+    res.status(201).json({ success: true, data: doc, message: 'Team created' });
   } catch (err) {
     next(err);
   }

@@ -1,13 +1,17 @@
+import mongoose from 'mongoose';
 import Highlight from '../models/Highlight.js';
+import Sport from '../models/Sport.js';
 import { uploadVideoToSupabase, unlinkSafe } from '../utils/supabaseUpload.js';
 
 export async function list(req, res, next) {
   try {
-    const { sport } = req.query;
-    const filter = {};
-    if (sport) filter.sport = sport.trim().toLowerCase();
-    const list = await Highlight.find(filter).sort({ createdAt: -1 }).lean();
-    res.json({ success: true, data: list });
+    const { sportId } = req.query;
+    if (!sportId) return res.status(400).json({ success: false, message: 'sportId query param is required' });
+    if (!mongoose.Types.ObjectId.isValid(sportId)) {
+      return res.status(400).json({ success: false, message: 'Invalid sportId' });
+    }
+    const list = await Highlight.find({ sport: sportId }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: list, message: 'Highlights fetched' });
   } catch (err) {
     next(err);
   }
@@ -25,10 +29,17 @@ export async function getOne(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const { title, sport, description, duration, date } = req.body;
-    if (!title) return res.status(400).json({ success: false, message: 'Title required' });
-    
-    const sportVal = (sport || req.sport || '').trim() || 'general';
+    const { title, sportId, matchId, description, duration, date } = req.body;
+    if (!title?.trim()) return res.status(400).json({ success: false, message: 'Title required' });
+    if (!sportId) return res.status(400).json({ success: false, message: 'sportId required' });
+    if (!mongoose.Types.ObjectId.isValid(sportId)) return res.status(400).json({ success: false, message: 'Invalid sportId' });
+    if (matchId && !mongoose.Types.ObjectId.isValid(matchId)) {
+      return res.status(400).json({ success: false, message: 'Invalid matchId' });
+    }
+
+    const sportDoc = await Sport.findById(sportId).lean();
+    if (!sportDoc) return res.status(404).json({ success: false, message: 'Sport not found' });
+
     let videoUrl = req.body.videoUrl;
     
     // Handle file upload if present
@@ -59,8 +70,9 @@ export async function create(req, res, next) {
     }
     
     const doc = await Highlight.create({
-      title,
-      sport: sportVal,
+      title: title.trim(),
+      sport: sportId,
+      match: matchId || undefined,
       description,
       videoUrl,
       thumbnailUrl: req.body.thumbnailUrl,
@@ -69,7 +81,9 @@ export async function create(req, res, next) {
       date: date || new Date().toISOString().split('T')[0],
     });
     
-    res.status(201).json({ success: true, data: doc });
+    const io = req.app.get('io');
+    if (io) io.emit('highlightAdded', doc);
+    res.status(201).json({ success: true, data: doc, message: 'Highlight created' });
   } catch (err) {
     if (req.file?.path) unlinkSafe(req.file.path);
     next(err);

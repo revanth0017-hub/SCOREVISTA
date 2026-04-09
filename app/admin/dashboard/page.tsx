@@ -3,17 +3,20 @@
 import { Sidebar } from "@/components/ui/sidebar"
 import { ArrowRight } from 'lucide-react'; // Import ArrowRight
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { AdminSidebar } from '@/components/admin-sidebar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { api, clearToken, setUser } from '@/lib/api';
+import { isLikelyNetworkFailure, safeActionError } from '@/lib/client-errors';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Edit2, Plus, Trash2, Trophy, Users, Calendar, Zap, Flame, Brain, X, Save } from 'lucide-react';
-import { getAdminSport, setAdminSport } from '@/lib/admin-sport';
+import { getAdminSport, setAdminSport, clearAdminSport } from '@/lib/admin-sport';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +24,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+
+type SportDoc = { _id: string; slug: string; name: string; icon?: string };
+type TeamDoc = { _id: string; name: string; players?: number; wins?: number };
+type MatchDoc = {
+  _id: string;
+  sport: string; // sportId
+  teamA: { _id: string; name: string };
+  teamB: { _id: string; name: string };
+  venue?: string;
+  date?: string;
+  time?: string;
+  status?: string;
+  scoreA?: number;
+  scoreB?: number;
+};
 
 const SPORT_EMOJI: Record<string, string> = {
   cricket: '🏏',
@@ -64,16 +82,23 @@ function AdminDashboardContent() {
   const [selectedMatch, setSelectedMatch] = useState<any>(null);
   const [selectedTeam, setSelectedTeam] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRetiring, setIsRetiring] = useState(false);
+
+  const router = useRouter();
+
+  const [sportId, setSportId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Form data
   const [matchForm, setMatchForm] = useState({
-    team1: '',
-    team2: '',
+    teamAId: '',
+    teamBId: '',
     venue: '',
     date: new Date().toISOString().split('T')[0],
     time: '',
-    score1: 0,
-    score2: 0,
+    scoreA: 0,
+    scoreB: 0,
+    status: 'live' as 'upcoming' | 'live' | 'completed',
     sportType: sport,
   });
 
@@ -84,128 +109,169 @@ function AdminDashboardContent() {
     sportType: sport,
   });
 
-  // Filter matches for this sport only
-  const [matches, setMatches] = useState([
-    {
-      id: 1,
-      team1: 'Team A',
-      team2: 'Team B',
-      score1: 142,
-      score2: 89,
-      status: 'live',
-      venue: 'Main Ground',
-      time: '2:00 PM',
-      sportType: sport,
-    },
-    {
-      id: 2,
-      team1: 'Team C',
-      team2: 'Team D',
-      score1: 95,
-      score2: 87,
-      status: 'live',
-      venue: 'Secondary Field',
-      time: '4:30 PM',
-      sportType: sport,
-    },
-  ]);
+  const [matches, setMatches] = useState<MatchDoc[]>([]);
+  const [teams, setTeams] = useState<TeamDoc[]>([]);
 
-  const [teams, setTeams] = useState([
-    { id: 1, name: 'Team A', players: 11, matches: 5, wins: 4, sportType: sport },
-    { id: 2, name: 'Team B', players: 11, matches: 4, wins: 2, sportType: sport },
-    { id: 3, name: 'Team C', players: 12, matches: 6, wins: 5, sportType: sport },
-  ]);
+  const liveMatches = useMemo(
+    () => matches.filter((m) => (m.status || '').toLowerCase() === 'live'),
+    [matches]
+  );
+
+  const fetchSportId = async (): Promise<string> => {
+    const sportsRes = await api.get<{ success: boolean; data: SportDoc[] }>('/api/sports');
+    const sports = (sportsRes as { data?: SportDoc[] }).data || [];
+    const s = sports.find((x) => x.slug === sport);
+    if (!s?._id) throw new Error(`Sport not found: ${sport}`);
+    return s._id;
+  };
+
+  const fetchTeams = async (sid: string) => {
+    const res = await api.get<{ success: boolean; data: TeamDoc[] }>(`/api/teams?sportId=${encodeURIComponent(sid)}`);
+    const list = (res as { data?: TeamDoc[] }).data || [];
+    setTeams(list);
+  };
+
+  const fetchMatches = async (sid: string) => {
+    const res = await api.get<{ success: boolean; data: MatchDoc[] }>(`/api/matches?sportId=${encodeURIComponent(sid)}`);
+    const list = (res as { data?: MatchDoc[] }).data || [];
+    setMatches(list);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    setIsLoading(true);
+    (async () => {
+      const sid = await fetchSportId();
+      if (!cancelled) setSportId(sid);
+      await Promise.all([fetchTeams(sid), fetchMatches(sid)]);
+    })()
+      .catch((err) => {
+        if (cancelled) return;
+        setSportId(null);
+        setTeams([]);
+        setMatches([]);
+        if (!isLikelyNetworkFailure(err)) {
+          setError(safeActionError(err, 'Unable to load admin data. Please try again.'));
+        }
+      })
+      .finally(() => !cancelled && setIsLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [sport]);
+
+  // admin actions
+  const handleRetire = async () => {
+    if (!confirm('Retiring will disable your account and return you to the home page. Proceed?')) return;
+    setIsRetiring(true);
+    try {
+      await api.postJson('/api/auth/admin/retire', {});
+      clearToken();
+      setUser(null);
+      clearAdminSport();
+      router.push('/');
+    } catch (err) {
+      console.error('Retire error', err);
+      alert(safeActionError(err, 'Unable to complete retire. Please try again.'));
+    } finally {
+      setIsRetiring(false);
+    }
+  };
 
   // Match Handlers
   const handleAddMatch = () => {
     setMatchForm({
-      team1: '',
-      team2: '',
+      teamAId: '',
+      teamBId: '',
       venue: '',
       date: new Date().toISOString().split('T')[0],
       time: '',
-      score1: 0,
-      score2: 0,
+      scoreA: 0,
+      scoreB: 0,
+      status: 'live',
       sportType: sport,
     });
     setShowAddMatchModal(true);
+    setError(null);
   };
 
   const handleEditMatch = (match: any) => {
     setSelectedMatch(match);
     setMatchForm({
-      team1: match.team1,
-      team2: match.team2,
-      venue: match.venue,
-      date: new Date().toISOString().split('T')[0],
+      teamAId: match.teamA?._id,
+      teamBId: match.teamB?._id,
+      venue: match.venue || '',
+      date: match.date || new Date().toISOString().split('T')[0],
       time: match.time,
-      score1: match.score1,
-      score2: match.score2,
+      scoreA: match.scoreA ?? 0,
+      scoreB: match.scoreB ?? 0,
+      status: (match.status || 'live') as 'upcoming' | 'live' | 'completed',
       sportType: match.sportType || sport,
     });
     setShowEditMatchModal(true);
+    setError(null);
   };
 
   const handleSaveMatch = async () => {
-    // Validation
-    if (!matchForm.team1 || !matchForm.team2) {
-      alert('Please enter both team names');
-      return;
-    }
-    if (matchForm.team1 === matchForm.team2) {
-      alert('Teams cannot be the same!');
-      return;
-    }
+    if (!sportId) return;
+    if (!matchForm.teamAId || !matchForm.teamBId) return setError('Please select both teams');
+    if (matchForm.teamAId === matchForm.teamBId) return setError('Teams cannot be the same!');
     if (!matchForm.venue) {
-      alert('Please enter a venue');
-      return;
+      return setError('Please enter a venue');
     }
 
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
       if (showEditMatchModal && selectedMatch) {
-        // Update existing match
-        setMatches(matches.map(m => 
-          m.id === selectedMatch.id 
-            ? { ...m, ...matchForm }
-            : m
-        ));
-        alert(`✅ Match updated successfully for ${sport}!`);
+        // Update match meta + score
+        const patched = await api.patch<{ success: boolean; data: MatchDoc }>(`/api/matches/${selectedMatch._id}`, {
+          venue: matchForm.venue,
+          date: matchForm.date,
+          time: matchForm.time,
+          status: matchForm.status,
+        });
+        const scored = await api.putJson<{ success: boolean; data: MatchDoc }>(`/api/matches/${selectedMatch._id}/score`, {
+          scoreA: matchForm.scoreA,
+          scoreB: matchForm.scoreB,
+          status: matchForm.status,
+        });
+        const updated = (scored as any)?.data || (patched as any)?.data;
+        if (updated?._id) {
+          setMatches((prev) => prev.map((m) => (m._id === updated._id ? updated : m)));
+        }
       } else {
-        // Add new match
-        const newMatch = {
-          id: Math.max(...matches.map(m => m.id), 0) + 1,
-          ...matchForm,
-          status: 'live',
-          sportType: sport,
-        };
-        setMatches([...matches, newMatch]);
-        alert(`✅ Match added successfully to ${sport}!\n\nThis match will now appear in the ${sport} user panel.`);
+        await api.postJson('/api/matches', {
+          sportId,
+          teamAId: matchForm.teamAId,
+          teamBId: matchForm.teamBId,
+          venue: matchForm.venue,
+          date: matchForm.date,
+          time: matchForm.time,
+          status: matchForm.status,
+          scoreA: matchForm.scoreA,
+          scoreB: matchForm.scoreB,
+        });
       }
-      
+      await fetchMatches(sportId);
       setShowAddMatchModal(false);
       setShowEditMatchModal(false);
     } catch (error) {
-      alert('❌ Error saving match. Please try again.');
+      setError(safeActionError(error, 'Unable to save the match. Please try again.'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDeleteMatch = async (matchId: number) => {
+  const handleDeleteMatch = async (matchId: string) => {
     if (!confirm(`Are you sure you want to delete this ${sport} match?`)) return;
     
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setMatches(matches.filter(m => m.id !== matchId));
-      alert(`✅ Match deleted successfully from ${sport}!`);
+      await api.delete(`/api/matches/${matchId}`);
+      if (sportId) await fetchMatches(sportId);
     } catch (error) {
-      alert('❌ Error deleting match. Please try again.');
+      setError(safeActionError(error, 'Unable to delete the match.'));
     } finally {
       setIsLoading(false);
     }
@@ -243,60 +309,41 @@ function AdminDashboardContent() {
       return;
     }
 
+    if (!sportId) return;
     setIsLoading(true);
+    setError(null);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      if (showEditTeamModal && selectedTeam) {
-        // Update existing team
-        setTeams(teams.map(t => 
-          t.id === selectedTeam.id 
-            ? { ...t, ...teamForm, sportType: sport }
-            : t
-        ));
-        alert(`✅ Team "${teamForm.name}" updated successfully for ${sport}!`);
+      if (showEditTeamModal && selectedTeam?._id) {
+        await api.patch(`/api/teams/${selectedTeam._id}`, { name: teamForm.name, players: teamForm.players });
       } else {
-        // Add new team
-        const newTeam = {
-          id: Math.max(...teams.map(t => t.id), 0) + 1,
-          ...teamForm,
-          matches: 0,
-          wins: 0,
-          sportType: sport,
-        };
-        setTeams([...teams, newTeam]);
-        alert(`✅ Team "${teamForm.name}" added successfully to ${sport}!\n\nThis team will now appear in:\n• ${sport.charAt(0).toUpperCase() + sport.slice(1)} team listings\n• Match selection dropdowns\n• ${sport.charAt(0).toUpperCase() + sport.slice(1)} user panel`);
+        await api.postJson('/api/teams', { name: teamForm.name, players: teamForm.players, sportId });
       }
-      
+      await fetchTeams(sportId);
       setShowAddTeamModal(false);
       setShowEditTeamModal(false);
     } catch (error) {
-      alert('❌ Error saving team. Please try again.');
+      setError(safeActionError(error, 'Unable to save the team. Please try again.'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDeleteTeam = async (teamId: number) => {
-    const team = teams.find(t => t.id === teamId);
-    if (!confirm(`Are you sure you want to delete team "${team?.name}" from ${sport}?`)) return;
+  const handleDeleteTeam = async (teamId: string) => {
+    if (!confirm(`Are you sure you want to delete this team from ${sport}?`)) return;
     
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setTeams(teams.filter(t => t.id !== teamId));
-      alert(`✅ Team deleted successfully from ${sport}!`);
+      await api.delete(`/api/teams/${teamId}`);
+      if (sportId) await fetchTeams(sportId);
     } catch (error) {
-      alert('❌ Error deleting team. Please try again.');
+      setError(safeActionError(error, 'Unable to delete the team.'));
     } finally {
       setIsLoading(false);
     }
   };
 
   const TEAMS = teams;
-  const ONGOING_MATCHES = matches;
+  const ONGOING_MATCHES = liveMatches;
 
   return (
     <div className="flex h-screen w-full bg-background">
@@ -313,6 +360,14 @@ function AdminDashboardContent() {
               </div>
               <h1 className="text-2xl font-bold">Manage {sport}</h1>
             </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleRetire}
+              disabled={isRetiring || isLoading}
+            >
+              {isRetiring ? 'Retiring...' : 'Retire Admin'}
+            </Button>
           </div>
         </div>
 
@@ -433,7 +488,7 @@ function AdminDashboardContent() {
               <div className="space-y-4">
                 {ONGOING_MATCHES.map((match) => (
                   <div
-                    key={match.id}
+                    key={match._id}
                     className="p-5 bg-background rounded-lg border border-border hover:border-muted-foreground/25 transition"
                   >
                     <div className="flex items-center justify-between mb-4">
@@ -446,8 +501,8 @@ function AdminDashboardContent() {
 
                     <div className="grid grid-cols-3 gap-6">
                       <div className="text-center">
-                        <p className="text-sm font-semibold mb-2">{match.team1}</p>
-                        <div className="text-4xl font-bold text-foreground">{match.score1}</div>
+                        <p className="text-sm font-semibold mb-2">{match.teamA?.name}</p>
+                        <div className="text-4xl font-bold text-foreground">{match.scoreA ?? 0}</div>
                       </div>
                       <div className="flex items-center justify-center">
                         <div className="text-center">
@@ -456,8 +511,8 @@ function AdminDashboardContent() {
                         </div>
                       </div>
                       <div className="text-center">
-                        <p className="text-sm font-semibold mb-2">{match.team2}</p>
-                        <div className="text-4xl font-bold text-foreground">{match.score2}</div>
+                        <p className="text-sm font-semibold mb-2">{match.teamB?.name}</p>
+                        <div className="text-4xl font-bold text-foreground">{match.scoreB ?? 0}</div>
                       </div>
                     </div>
 
@@ -474,7 +529,7 @@ function AdminDashboardContent() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleDeleteMatch(match.id)}
+                        onClick={() => handleDeleteMatch(match._id)}
                         disabled={isLoading}
                         className="border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-600"
                       >
@@ -520,7 +575,7 @@ function AdminDashboardContent() {
                   </thead>
                   <tbody>
                     {TEAMS.map((team) => (
-                      <tr key={team.id} className="border-b border-border hover:bg-background/50 transition">
+                      <tr key={team._id} className="border-b border-border hover:bg-background/50 transition">
                         <td className="py-3 px-4 font-medium">{team.name}</td>
                         <td className="py-3 px-4 text-muted-foreground">{team.players}</td>
                         <td className="py-3 px-4">
@@ -543,7 +598,7 @@ function AdminDashboardContent() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleDeleteTeam(team.id)}
+                              onClick={() => handleDeleteTeam(team._id)}
                               disabled={isLoading}
                               className="border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-600"
                             >
@@ -589,50 +644,34 @@ function AdminDashboardContent() {
               <div>
                 <label className="block text-sm font-medium mb-2">Team 1 *</label>
                 <select
-                  value={matchForm.team1}
-                  onChange={(e) => setMatchForm({ ...matchForm, team1: e.target.value })}
+                  value={matchForm.teamAId}
+                  onChange={(e) => setMatchForm({ ...matchForm, teamAId: e.target.value })}
                   className="w-full px-3 py-2 bg-background border border-input rounded-md"
                 >
                   <option value="">Select Team 1</option>
                   {teams.map((team) => (
-                    <option key={team.id} value={team.name}>
+                    <option key={team._id} value={team._id}>
                       {team.name}
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Or type a new team name
-                </p>
-                <Input
-                  value={matchForm.team1}
-                  onChange={(e) => setMatchForm({ ...matchForm, team1: e.target.value })}
-                  placeholder="Enter team name"
-                  className="mt-2"
-                />
+                <p className="text-xs text-muted-foreground mt-1">Create teams first if list is empty.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Team 2 *</label>
                 <select
-                  value={matchForm.team2}
-                  onChange={(e) => setMatchForm({ ...matchForm, team2: e.target.value })}
+                  value={matchForm.teamBId}
+                  onChange={(e) => setMatchForm({ ...matchForm, teamBId: e.target.value })}
                   className="w-full px-3 py-2 bg-background border border-input rounded-md"
                 >
                   <option value="">Select Team 2</option>
-                  {teams.filter(t => t.name !== matchForm.team1).map((team) => (
-                    <option key={team.id} value={team.name}>
+                  {teams.filter((t) => t._id !== matchForm.teamAId).map((team) => (
+                    <option key={team._id} value={team._id}>
                       {team.name}
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Or type a new team name
-                </p>
-                <Input
-                  value={matchForm.team2}
-                  onChange={(e) => setMatchForm({ ...matchForm, team2: e.target.value })}
-                  placeholder="Enter team name"
-                  className="mt-2"
-                />
+                <p className="text-xs text-muted-foreground mt-1">Create teams first if list is empty.</p>
               </div>
             </div>
 
@@ -670,8 +709,8 @@ function AdminDashboardContent() {
                 <label className="block text-sm font-medium mb-2">Team 1 Score</label>
                 <Input
                   type="number"
-                  value={matchForm.score1}
-                  onChange={(e) => setMatchForm({ ...matchForm, score1: parseInt(e.target.value) || 0 })}
+                  value={matchForm.scoreA}
+                  onChange={(e) => setMatchForm({ ...matchForm, scoreA: parseInt(e.target.value) || 0 })}
                   min="0"
                 />
               </div>
@@ -679,11 +718,27 @@ function AdminDashboardContent() {
                 <label className="block text-sm font-medium mb-2">Team 2 Score</label>
                 <Input
                   type="number"
-                  value={matchForm.score2}
-                  onChange={(e) => setMatchForm({ ...matchForm, score2: parseInt(e.target.value) || 0 })}
+                  value={matchForm.scoreB}
+                  onChange={(e) => setMatchForm({ ...matchForm, scoreB: parseInt(e.target.value) || 0 })}
                   min="0"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Status</label>
+              <select
+                value={matchForm.status}
+                onChange={(e) => setMatchForm({ ...matchForm, status: e.target.value as any })}
+                className="w-full px-3 py-2 bg-background border border-input rounded-md"
+              >
+                <option value="upcoming">Upcoming</option>
+                <option value="live">Live</option>
+                <option value="completed">Completed</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Set to Completed to move it into Results.
+              </p>
             </div>
 
             <div className="flex gap-3 pt-4">
@@ -724,19 +779,11 @@ function AdminDashboardContent() {
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Team 1</label>
-                <Input
-                  value={matchForm.team1}
-                  onChange={(e) => setMatchForm({ ...matchForm, team1: e.target.value })}
-                  placeholder="Enter team name"
-                />
+                <Input value={selectedMatch?.teamA?.name || ''} disabled />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Team 2</label>
-                <Input
-                  value={matchForm.team2}
-                  onChange={(e) => setMatchForm({ ...matchForm, team2: e.target.value })}
-                  placeholder="Enter team name"
-                />
+                <Input value={selectedMatch?.teamB?.name || ''} disabled />
               </div>
             </div>
 
@@ -745,8 +792,8 @@ function AdminDashboardContent() {
                 <label className="block text-sm font-medium mb-2">Team 1 Score</label>
                 <Input
                   type="number"
-                  value={matchForm.score1}
-                  onChange={(e) => setMatchForm({ ...matchForm, score1: parseInt(e.target.value) || 0 })}
+                  value={matchForm.scoreA}
+                  onChange={(e) => setMatchForm({ ...matchForm, scoreA: parseInt(e.target.value) || 0 })}
                   min="0"
                 />
               </div>
@@ -754,11 +801,27 @@ function AdminDashboardContent() {
                 <label className="block text-sm font-medium mb-2">Team 2 Score</label>
                 <Input
                   type="number"
-                  value={matchForm.score2}
-                  onChange={(e) => setMatchForm({ ...matchForm, score2: parseInt(e.target.value) || 0 })}
+                  value={matchForm.scoreB}
+                  onChange={(e) => setMatchForm({ ...matchForm, scoreB: parseInt(e.target.value) || 0 })}
                   min="0"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Status</label>
+              <select
+                value={matchForm.status}
+                onChange={(e) => setMatchForm({ ...matchForm, status: e.target.value as any })}
+                className="w-full px-3 py-2 bg-background border border-input rounded-md"
+              >
+                <option value="live">Live</option>
+                <option value="completed">Completed</option>
+                <option value="upcoming">Upcoming</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Choose Completed to finish the match.
+              </p>
             </div>
 
             <div className="flex gap-3 pt-4">
@@ -768,7 +831,7 @@ function AdminDashboardContent() {
                 className="flex-1 bg-green-500 hover:bg-green-600"
               >
                 <Save className="w-4 h-4 mr-2" />
-                {isLoading ? 'Updating...' : 'Update Match'}
+                {isLoading ? 'Updating...' : 'Update'}
               </Button>
               <Button 
                 onClick={() => setShowEditMatchModal(false)}

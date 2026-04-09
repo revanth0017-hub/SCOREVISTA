@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import User from '../models/User.js';
 import Admin from '../models/Admin.js';
+import Sport from '../models/Sport.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '7d';
@@ -76,12 +77,21 @@ export async function requestAdminOTP(req, res, next) {
 
     const sportLower = sportCategory.trim().toLowerCase();
 
-    // Check if admin already exists for this sport
+    // Check if another active admin already manages the sport (redundant but safe)
     const existingActive = await Admin.findOne({ sportCategory: sportLower, isActive: true });
     if (existingActive) {
       return res.status(409).json({
         success: false,
         message: 'Sport already managed by another admin',
+      });
+    }
+
+    // additionally, check the sport record to see if an admin is flagged
+    const sportDoc = await Sport.findOne({ slug: sportLower });
+    if (sportDoc && sportDoc.adminAssigned) {
+      return res.status(409).json({
+        success: false,
+        message: 'Sport already has an assigned admin',
       });
     }
 
@@ -94,20 +104,56 @@ export async function requestAdminOTP(req, res, next) {
       });
     }
 
-    // Generate unique admin code using crypto
-    const randomBytes = crypto.randomBytes(6).toString('hex').toUpperCase();
-    const sportPrefix = sportLower.slice(0, 6).toUpperCase();
-    const adminCode = `${sportPrefix}-${randomBytes}`;
+    // Generate and persist new admin with a unique code.  We don't want a
+    // duplicate key error to bubble up to the client, so attempt a few times
+    // if the randomly generated adminCode happens to collide with an existing
+    // record.  Collisions are unlikely, but the app has seen them in testing
+    // which is why users were getting `Duplicate value` without an obvious
+    // fix.
+    let admin;
+    let finalCode = null;
+    let attempts = 0;
+    while (!admin && attempts < 5) {
+      const randomBytes = crypto.randomBytes(6).toString('hex').toUpperCase();
+      const sportPrefix = sportLower.slice(0, 6).toUpperCase();
+      const adminCode = `${sportPrefix}-${randomBytes}`;
 
-    // Create new admin
-    const admin = await Admin.create({
-      email: email.toLowerCase().trim(),
-      name: name.trim(),
-      password, // Will be hashed by pre-save hook
-      sportCategory: sportLower,
-      adminCode,
-      isActive: true,
-    });
+      try {
+        admin = await Admin.create({
+          email: email.toLowerCase().trim(),
+          name: name.trim(),
+          password, // Will be hashed by pre-save hook
+          sportCategory: sportLower,
+          adminCode,
+          isActive: true,
+        });
+        finalCode = admin.adminCode; // remember for response
+      } catch (err) {
+        // only retry on duplicate adminCode/code; if it's another constraint fail,
+        // rethrow and let the global error handler deal with it.
+        const field = Object.keys(err.keyPattern || err.keyValue || {})[0];
+        if (err.code === 11000 && (field === 'adminCode' || field === 'code')) {
+          attempts += 1;
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (!admin) {
+      // this is very unlikely, but propagate a clear error if we couldn't
+      // generate a unique code after several tries
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate unique admin code, please try again. ' +
+                 'If this persists, verify that the database has no stale `code` index.',
+      });
+    }
+
+    // mark sport as having an assigned admin
+    if (sportDoc) {
+      sportDoc.adminAssigned = true;
+      await sportDoc.save();
+    }
 
     // Generate JWT token
     const token = signToken({ id: admin._id, role: 'admin', sportCategory: admin.sportCategory });
@@ -116,7 +162,7 @@ export async function requestAdminOTP(req, res, next) {
       success: true,
       message: 'Admin account created successfully',
       token,
-      adminCode,
+      adminCode: finalCode,
       admin: {
         id: admin._id,
         email: admin.email,
@@ -140,14 +186,11 @@ export async function verifyAdminOTP(req, res, next) {
 
 export async function loginAdmin(req, res, next) {
   try {
-    const { email, password, adminCode } = req.body;
+    const { email, adminCode } = req.body;
 
     // Validate required fields
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email is required' });
-    }
-    if (!password) {
-      return res.status(400).json({ success: false, message: 'Password is required' });
     }
     if (!adminCode) {
       return res.status(400).json({ success: false, message: 'Admin code is required' });
@@ -156,22 +199,15 @@ export async function loginAdmin(req, res, next) {
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedCode = adminCode.trim().toUpperCase();
 
-    // Find admin by email and include password
-    const admin = await Admin.findOne({ email: normalizedEmail, isActive: true }).select('+password');
-    
+    // Find admin by email
+    const admin = await Admin.findOne({ email: normalizedEmail, isActive: true });
     if (!admin) {
-      return res.status(401).json({ success: false, message: 'Invalid email' });
-    }
-
-    // Verify password
-    const isPasswordValid = await admin.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(401).json({ success: false, message: 'Invalid password' });
+      return res.status(401).json({ success: false, message: 'Invalid email or code' });
     }
 
     // Verify admin code
     if (admin.adminCode !== normalizedCode) {
-      return res.status(401).json({ success: false, message: 'Invalid admin code' });
+      return res.status(401).json({ success: false, message: 'Invalid email or code' });
     }
 
     // Generate JWT token
@@ -216,6 +252,29 @@ export async function getMe(req, res, next) {
         role: 'user',
       },
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Deactivate the currently authenticated admin and unassign the sport
+export async function retireAdmin(req, res, next) {
+  try {
+    const admin = req.user;
+    if (!admin || admin.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const sport = admin.sportCategory;
+    admin.isActive = false;
+    admin.sportCategory = null;
+    await admin.save();
+
+    if (sport) {
+      await Sport.findOneAndUpdate({ slug: sport.toLowerCase() }, { adminAssigned: false });
+    }
+
+    res.json({ success: true, message: 'Admin retired successfully' });
   } catch (err) {
     next(err);
   }

@@ -1,13 +1,21 @@
+import mongoose from 'mongoose';
 import Match from '../models/Match.js';
+import Sport from '../models/Sport.js';
+import Team from '../models/Team.js';
 
 export async function list(req, res, next) {
   try {
-    const { sport, status } = req.query;
-    const filter = {};
-    if (sport) filter.sport = sport.trim().toLowerCase();
-    if (status) filter.status = status;
-    const list = await Match.find(filter).sort({ date: -1, time: -1 }).lean();
-    res.json({ success: true, data: list });
+    const { sportId } = req.query;
+    if (!sportId) return res.status(400).json({ success: false, message: 'sportId query param is required' });
+    if (!mongoose.Types.ObjectId.isValid(sportId)) {
+      return res.status(400).json({ success: false, message: 'Invalid sportId' });
+    }
+    const list = await Match.find({ sport: sportId })
+      .sort({ date: -1, time: -1, createdAt: -1 })
+      .populate('teamA', 'name')
+      .populate('teamB', 'name')
+      .lean();
+    res.json({ success: true, data: list, message: 'Matches fetched' });
   } catch (err) {
     next(err);
   }
@@ -25,25 +33,45 @@ export async function getOne(req, res, next) {
 
 export async function create(req, res, next) {
   try {
-    const { team1, team2, sport, venue, date, time, status, score1, score2, overs1, overs2, extraInfo } = req.body;
-    if (!team1 || !team2) return res.status(400).json({ success: false, message: 'Team names required' });
-    const sportLower = (sport || req.sport || '').trim().toLowerCase();
-    if (!sportLower) return res.status(400).json({ success: false, message: 'Sport required' });
+    const { sportId, teamAId, teamBId, venue, date, time, status, scoreA, scoreB, oversA, oversB, extraInfo } = req.body;
+    if (!sportId) return res.status(400).json({ success: false, message: 'sportId required' });
+    if (!teamAId || !teamBId) return res.status(400).json({ success: false, message: 'teamAId and teamBId required' });
+    if (!mongoose.Types.ObjectId.isValid(sportId)) return res.status(400).json({ success: false, message: 'Invalid sportId' });
+    if (!mongoose.Types.ObjectId.isValid(teamAId) || !mongoose.Types.ObjectId.isValid(teamBId)) {
+      return res.status(400).json({ success: false, message: 'Invalid team id(s)' });
+    }
+    if (teamAId === teamBId) return res.status(400).json({ success: false, message: 'Teams must be different' });
+
+    const sportDoc = await Sport.findById(sportId).lean();
+    if (!sportDoc) return res.status(404).json({ success: false, message: 'Sport not found' });
+
+    const [teamA, teamB] = await Promise.all([
+      Team.findById(teamAId).lean(),
+      Team.findById(teamBId).lean(),
+    ]);
+    if (!teamA || !teamB) return res.status(404).json({ success: false, message: 'Team not found' });
+    if (String(teamA.sport) !== String(sportId) || String(teamB.sport) !== String(sportId)) {
+      return res.status(400).json({ success: false, message: 'Teams must belong to the selected sport' });
+    }
+
     const doc = await Match.create({
-      team1,
-      team2,
-      sport: sportLower,
+      sport: sportId,
+      teamA: teamAId,
+      teamB: teamBId,
       venue,
       date,
       time,
       status: status || 'upcoming',
-      score1: Number(score1) || 0,
-      score2: Number(score2) || 0,
-      overs1,
-      overs2,
+      scoreA: Number(scoreA) || 0,
+      scoreB: Number(scoreB) || 0,
+      oversA,
+      oversB,
       extraInfo,
     });
-    res.status(201).json({ success: true, data: doc });
+    const populated = await Match.findById(doc._id).populate('teamA', 'name').populate('teamB', 'name').lean();
+    const io = req.app.get('io');
+    if (io) io.emit('matchCreated', populated);
+    res.status(201).json({ success: true, data: populated, message: 'Match created' });
   } catch (err) {
     next(err);
   }
@@ -63,21 +91,23 @@ export async function update(req, res, next) {
   }
 }
 
-export async function updateLiveScore(req, res, next) {
+export async function updateScore(req, res, next) {
   try {
-    const { score1, score2, status, overs1, overs2 } = req.body;
+    const { scoreA, scoreB, status, oversA, oversB } = req.body;
     const doc = await Match.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Match not found' });
-    if (req.role === 'admin' && req.sport && doc.sport !== req.sport) {
-      return res.status(403).json({ success: false, message: 'Access limited to your assigned sport' });
-    }
-    if (score1 !== undefined) doc.score1 = Number(score1);
-    if (score2 !== undefined) doc.score2 = Number(score2);
+
+    if (scoreA !== undefined) doc.scoreA = Number(scoreA);
+    if (scoreB !== undefined) doc.scoreB = Number(scoreB);
     if (status) doc.status = status;
-    if (overs1 !== undefined) doc.overs1 = overs1;
-    if (overs2 !== undefined) doc.overs2 = overs2;
+    if (oversA !== undefined) doc.oversA = oversA;
+    if (oversB !== undefined) doc.oversB = oversB;
+
     await doc.save();
-    res.json({ success: true, data: doc });
+    const populated = await Match.findById(doc._id).populate('teamA', 'name').populate('teamB', 'name').lean();
+    const io = req.app.get('io');
+    if (io) io.emit('scoreUpdated', populated);
+    res.json({ success: true, data: populated, message: 'Score updated' });
   } catch (err) {
     next(err);
   }

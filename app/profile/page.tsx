@@ -27,9 +27,9 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="p-8 max-w-2xl">
+        <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {/* Header */}
-          <div className="mb-8">
+          <div className="mb-6">
             <h2 className="text-3xl font-bold mb-2">Profile Settings</h2>
             <p className="text-muted-foreground">Manage your account information and preferences</p>
           </div>
@@ -37,7 +37,7 @@ export default function ProfilePage() {
           {/* Profile Picture Section */}
           <Card className="bg-card border-border mb-6">
             <CardContent className="pt-6">
-              <div className="flex items-center gap-6">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-6">
                 <div className="w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center">
                   <User className="w-12 h-12 text-primary" />
                 </div>

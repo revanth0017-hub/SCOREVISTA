@@ -7,6 +7,8 @@ const sportSchema = new mongoose.Schema(
     icon: { type: String, trim: true },
     description: { type: String, trim: true },
     isActive: { type: Boolean, default: true },
+    // track whether a live admin is currently assigned to this sport
+    adminAssigned: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

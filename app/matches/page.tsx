@@ -1,44 +1,18 @@
 'use client';
 
 import { Sidebar } from '@/components/sidebar';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-
-const MATCHES = [
-  {
-    id: 1,
-    sport: 'Cricket',
-    team1: 'Team A',
-    team2: 'Team B',
-    score1: 142,
-    score2: 89,
-    status: 'live',
-    venue: 'Main Ground',
-  },
-  {
-    id: 2,
-    sport: 'Football',
-    team1: 'Eagles',
-    team2: 'Lions',
-    score1: 2,
-    score2: 1,
-    status: 'live',
-    venue: 'Stadium',
-  },
-  {
-    id: 3,
-    sport: 'Volleyball',
-    team1: 'Team X',
-    team2: 'Team Y',
-    score1: 2,
-    score2: 1,
-    status: 'completed',
-    venue: 'Sports Hall',
-  },
-];
+import { SportMatchesList } from '@/components/sport-matches-list';
+import { useMemo, useState } from 'react';
 
 export default function MatchesPage() {
+  const [filter, setFilter] = useState<'all' | 'cricket' | 'football' | 'volleyball'>('all');
+  const sports = useMemo(() => ([
+    { slug: 'cricket', label: 'Cricket' },
+    { slug: 'football', label: 'Football' },
+    { slug: 'volleyball', label: 'Volleyball' },
+  ]), []);
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar />
@@ -64,52 +38,31 @@ export default function MatchesPage() {
 
           {/* Filters */}
           <div className="flex gap-4 mb-8 overflow-x-auto">
-            <Badge className="bg-primary/20 text-primary cursor-pointer">All Sports</Badge>
-            <Badge variant="outline" className="cursor-pointer">Live Only</Badge>
-            <Badge variant="outline" className="cursor-pointer">Cricket</Badge>
-            <Badge variant="outline" className="cursor-pointer">Football</Badge>
-            <Badge variant="outline" className="cursor-pointer">Volleyball</Badge>
+            <Badge
+              className={`${filter === 'all' ? 'bg-primary/20 text-primary' : 'bg-background'} cursor-pointer`}
+              onClick={() => setFilter('all')}
+            >
+              All Sports
+            </Badge>
+            {sports.map((s) => (
+              <Badge
+                key={s.slug}
+                variant="outline"
+                className={`${filter === (s.slug as any) ? 'border-primary text-primary' : ''} cursor-pointer`}
+                onClick={() => setFilter(s.slug as any)}
+              >
+                {s.label}
+              </Badge>
+            ))}
           </div>
 
           {/* Matches List */}
-          <div className="space-y-4">
-            {MATCHES.map((match) => (
-              <Card key={match.id} className="bg-card border-border hover:shadow-lg transition">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-4">
-                        <Badge className={match.status === 'live' ? 'bg-red-500 text-white' : 'bg-green-500 text-white'}>
-                          {match.status.toUpperCase()}
-                        </Badge>
-                        <span className="text-sm font-semibold text-primary">{match.sport}</span>
-                        <span className="text-sm text-muted-foreground">•</span>
-                        <span className="text-sm text-muted-foreground">{match.venue}</span>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-8">
-                        <div>
-                          <p className="font-semibold mb-1">{match.team1}</p>
-                          <p className="text-3xl font-bold text-primary">{match.score1}</p>
-                        </div>
-
-                        <div className="flex items-center justify-center">
-                          <span className="text-muted-foreground font-medium">vs</span>
-                        </div>
-
-                        <div className="text-right">
-                          <p className="font-semibold mb-1">{match.team2}</p>
-                          <p className="text-3xl font-bold">{match.score2}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <Button variant="outline" className="ml-4 bg-transparent">
-                      View Details
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+          <div className="space-y-10">
+            {(filter === 'all' ? sports : sports.filter((s) => s.slug === filter)).map((s) => (
+              <div key={s.slug}>
+                <h3 className="text-xl font-semibold mb-4">{s.label}</h3>
+                <SportMatchesList sport={s.slug} />
+              </div>
             ))}
           </div>
         </div>

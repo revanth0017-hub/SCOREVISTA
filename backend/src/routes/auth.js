@@ -14,4 +14,7 @@ router.post('/admin/request-otp', authController.requestAdminOTP);
 router.post('/admin/verify-otp', authController.verifyAdminOTP);
 router.post('/admin/login', authController.loginAdmin);
 
+// retirement endpoint for currently authenticated admin
+router.post('/admin/retire', authenticate, authController.retireAdmin);
+
 export default router;
