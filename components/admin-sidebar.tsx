@@ -10,11 +10,13 @@ import {
   Target,
   LogOut,
   Trophy,
+  MessageSquare,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { AdminSidebarProps } from '@/types';
 import { setAdminSport, clearAdminSport } from '@/lib/admin-sport';
+import { clearToken } from '@/lib/api';
 import { ThemeToggle } from '@/components/theme-toggle';
 import {
   Sidebar,
@@ -25,6 +27,7 @@ import {
 
 const ADMIN_SIDEBAR_ITEMS = [
   { label: 'Dashboard', icon: Home, segment: 'dashboard' },
+  { label: 'Assistant', icon: MessageSquare, segment: 'assistant' },
   { label: 'Manage Matches', icon: Target, segment: 'matches' },
   { label: 'Manage Teams', icon: Users, segment: 'teams' },
   { label: 'Settings', icon: Settings, segment: 'settings' },
@@ -39,6 +42,7 @@ export function AdminSidebar({ sport, sportIcon = '🏆' }: AdminSidebarProps) {
   }, [sport]);
 
   const handleLogout = () => {
+    clearToken();
     clearAdminSport();
     router.push('/');
   };
@@ -46,6 +50,9 @@ export function AdminSidebar({ sport, sportIcon = '🏆' }: AdminSidebarProps) {
   const isSegmentActive = (segment: string) => {
     if (segment === 'dashboard') {
       return pathname.startsWith('/admin/dashboard');
+    }
+    if (segment === 'assistant') {
+      return pathname.startsWith('/admin/assistant');
     }
 
     return pathname.startsWith(`/admin/${sport}/${segment}`);
@@ -98,7 +105,9 @@ export function AdminSidebar({ sport, sportIcon = '🏆' }: AdminSidebarProps) {
             const href =
               item.segment === 'dashboard'
                 ? `/admin/dashboard?sport=${sport}`
-                : `/admin/${sport}/${item.segment}`;
+                : item.segment === 'assistant'
+                  ? `/admin/assistant?sport=${sport}`
+                  : `/admin/${sport}/${item.segment}`;
 
             const active = isSegmentActive(item.segment);
 

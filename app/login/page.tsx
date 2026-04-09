@@ -2,9 +2,9 @@
 
 import React from "react"
 
-import { useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,8 +15,14 @@ import { safeActionError } from '@/lib/client-errors';
 
 type LoginMode = 'regular' | 'code';
 
-export default function LoginPage() {
+function safeNextPath(raw: string | null): string | null {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null;
+  return raw;
+}
+
+function LoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<LoginMode>('regular');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,6 +31,13 @@ export default function LoginPage() {
   const [adminCode, setAdminCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'admin') {
+      setMode('code');
+    }
+  }, [searchParams]);
 
   const handleCodeLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +65,12 @@ export default function LoginPage() {
       if (token && admin) {
         setToken(token);
         setUser({ ...admin, role: 'admin' });
-        router.push(`/admin/dashboard?sport=${admin.sportCategory}`);
+        const next = safeNextPath(searchParams.get('next'));
+        if (next) {
+          router.push(next);
+        } else {
+          router.push(`/admin/dashboard?sport=${admin.sportCategory}`);
+        }
       } else {
         setError('Login failed. Please try again.');
       }
@@ -77,7 +95,12 @@ export default function LoginPage() {
       if (token && user) {
         setToken(token);
         setUser(user);
-        router.push('/dashboard');
+        const next = safeNextPath(searchParams.get('next'));
+        if (next) {
+          router.push(next);
+        } else {
+          router.push('/dashboard');
+        }
       } else {
         setError('Login failed. Please try again.');
       }
@@ -107,7 +130,9 @@ export default function LoginPage() {
         <Card className="border-border">
           <CardHeader>
             <CardTitle className="text-2xl">Login</CardTitle>
-            <CardDescription>Enter your credentials to access the scoreboard</CardDescription>
+            <CardDescription>
+              Regular login is for fans. For admin tools, use <strong>Admin Code</strong> with your admin email and code.
+            </CardDescription>
 
             {/* Mode Toggle */}
             <div className="flex gap-2 mt-4">
@@ -234,5 +259,13 @@ export default function LoginPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
   );
 }

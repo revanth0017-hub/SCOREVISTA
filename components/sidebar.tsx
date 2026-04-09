@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Home, Zap, Medal, TrendingUp, Flame, Brain, User, LogOut, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { clearToken } from '@/lib/api';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const SIDEBAR_ITEMS = [
@@ -21,7 +22,7 @@ export function Sidebar() {
   const router = useRouter();
 
   const handleLogout = () => {
-    // TODO: Clear auth state
+    clearToken();
     router.push('/');
   };
 

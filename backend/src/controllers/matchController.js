@@ -93,10 +93,13 @@ export async function update(req, res, next) {
 
 export async function updateScore(req, res, next) {
   try {
-    const { scoreA, scoreB, status, oversA, oversB } = req.body;
+    const { scoreA, scoreB, status, oversA, oversB, sportScore } = req.body;
     const doc = await Match.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Match not found' });
 
+    if (sportScore !== undefined && sportScore !== null && typeof sportScore === 'object') {
+      doc.sportScore = sportScore;
+    }
     if (scoreA !== undefined) doc.scoreA = Number(scoreA);
     if (scoreB !== undefined) doc.scoreB = Number(scoreB);
     if (status) doc.status = status;

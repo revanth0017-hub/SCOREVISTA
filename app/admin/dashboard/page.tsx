@@ -15,8 +15,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Edit2, Plus, Trash2, Trophy, Users, Calendar, Zap, Flame, Brain, X, Save } from 'lucide-react';
+import { Edit2, Plus, Trash2, Trophy, Users, Calendar, Zap, Flame, Brain, X, Save, MessageSquare } from 'lucide-react';
 import { getAdminSport, setAdminSport, clearAdminSport } from '@/lib/admin-sport';
+import { getSocket } from '@/lib/socket';
 import {
   Dialog,
   DialogContent,
@@ -160,6 +161,25 @@ function AdminDashboardContent() {
       cancelled = true;
     };
   }, [sport]);
+
+  useEffect(() => {
+    if (!sportId) return;
+    const socket = getSocket();
+    const onMatchCreated = (m: MatchDoc) => {
+      if (m.sport !== sportId) return;
+      setMatches((prev) => [m, ...prev]);
+    };
+    const onScoreUpdated = (m: MatchDoc) => {
+      if (m.sport !== sportId) return;
+      setMatches((prev) => prev.map((x) => (x._id === m._id ? m : x)));
+    };
+    socket.on('matchCreated', onMatchCreated);
+    socket.on('scoreUpdated', onScoreUpdated);
+    return () => {
+      socket.off('matchCreated', onMatchCreated);
+      socket.off('scoreUpdated', onScoreUpdated);
+    };
+  }, [sportId]);
 
   // admin actions
   const handleRetire = async () => {
@@ -360,14 +380,22 @@ function AdminDashboardContent() {
               </div>
               <h1 className="text-2xl font-bold">Manage {sport}</h1>
             </div>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleRetire}
-              disabled={isRetiring || isLoading}
-            >
-              {isRetiring ? 'Retiring...' : 'Retire Admin'}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/admin/assistant?sport=${encodeURIComponent(sport)}`}>
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Switch to Assistant Mode
+                </Link>
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleRetire}
+                disabled={isRetiring || isLoading}
+              >
+                {isRetiring ? 'Retiring...' : 'Retire Admin'}
+              </Button>
+            </div>
           </div>
         </div>
 

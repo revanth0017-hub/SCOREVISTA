@@ -13,6 +13,8 @@ const matchSchema = new mongoose.Schema(
     scoreB: { type: Number, default: 0 },
     oversA: { type: String, trim: true },
     oversB: { type: String, trim: true },
+    /** Sport-specific structured score (cricket runs/wkts/overs, tennis sets[], etc.) */
+    sportScore: { type: mongoose.Schema.Types.Mixed },
     extraInfo: { type: String, trim: true },
   },
   { timestamps: true }
