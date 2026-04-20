@@ -16,7 +16,6 @@ import {
 import { cn } from '@/lib/utils';
 import { AdminSidebarProps } from '@/types';
 import { setAdminSport, clearAdminSport } from '@/lib/admin-sport';
-import { clearToken } from '@/lib/api';
 import { ThemeToggle } from '@/components/theme-toggle';
 import {
   Sidebar,
@@ -42,7 +41,6 @@ export function AdminSidebar({ sport, sportIcon = '🏆' }: AdminSidebarProps) {
   }, [sport]);
 
   const handleLogout = () => {
-    clearToken();
     clearAdminSport();
     router.push('/');
   };
@@ -102,12 +100,14 @@ export function AdminSidebar({ sport, sportIcon = '🏆' }: AdminSidebarProps) {
         <nav className="space-y-1">
           {ADMIN_SIDEBAR_ITEMS.map((item) => {
             const Icon = item.icon;
-            const href =
-              item.segment === 'dashboard'
-                ? `/admin/dashboard?sport=${sport}`
-                : item.segment === 'assistant'
-                  ? `/admin/assistant?sport=${sport}`
-                  : `/admin/${sport}/${item.segment}`;
+            let href = '';
+            if (item.segment === 'dashboard') {
+              href = `/admin/dashboard?sport=${sport}`;
+            } else if (item.segment === 'assistant') {
+              href = `/admin/assistant?sport=${sport}`;
+            } else {
+              href = `/admin/${sport}/${item.segment}`;
+            }
 
             const active = isSegmentActive(item.segment);
 

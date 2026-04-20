@@ -62,8 +62,6 @@ export default function BasketballSchedulePage() {
               </h2>
               <p className="text-sm text-muted-foreground">Complete schedule and fixtures</p>
             </div>
-              </div>
-            </div>
           </div>
 
           <div className="p-8">

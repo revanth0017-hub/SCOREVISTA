@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { AdminShell } from '@/components/admin-shell';
-import { AdminManageTeams } from '@/components/admin-manage-teams';
+import { AdminManageTeamsWithPlayers } from '@/components/admin-manage-teams-with-players';
 
 const SPORT_EMOJI: Record<string, string> = {
   cricket: '🏏',
@@ -22,7 +22,7 @@ export default function FootballTeamsPage() {
   return (
     <AdminShell>
       <div className="flex flex-col h-full">
-        <AdminManageTeams sport={sport} sportIcon={sportIcon} />
+        <AdminManageTeamsWithPlayers sport={sport} sportIcon={sportIcon} />
       </div>
     </AdminShell>
   );

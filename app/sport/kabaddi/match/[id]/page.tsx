@@ -49,36 +49,37 @@ export default function KabaddiMatchDetailPage() {
 
           <div className="p-6 md:p-8 max-w-7xl mx-auto">
             <Card className="bg-card/50 border-border shadow-md">
-            <CardHeader>
-              <CardTitle>Player Statistics</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-2 px-2">Player</th>
-                      <th className="text-center py-2 px-2">Team</th>
-                      <th className="text-center py-2 px-2">Points</th>
-                      <th className="text-center py-2 px-2">Raids</th>
-                      <th className="text-center py-2 px-2">Tackles</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PLAYER_STATS.map((player) => (
-                      <tr key={player.id} className="border-b border-border">
-                        <td className="py-3 px-2 font-semibold">{player.name}</td>
-                        <td className="text-center py-3 px-2">{player.team}</td>
-                        <td className="text-center py-3 px-2 font-bold text-green-500">{player.points}</td>
-                        <td className="text-center py-3 px-2">{player.raids}</td>
-                        <td className="text-center py-3 px-2">{player.tackles}</td>
+              <CardHeader>
+                <CardTitle>Player Statistics</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-2 px-2">Player</th>
+                        <th className="text-center py-2 px-2">Team</th>
+                        <th className="text-center py-2 px-2">Points</th>
+                        <th className="text-center py-2 px-2">Raids</th>
+                        <th className="text-center py-2 px-2">Tackles</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                    </thead>
+                    <tbody>
+                      {PLAYER_STATS.map((player) => (
+                        <tr key={player.id} className="border-b border-border">
+                          <td className="py-3 px-2 font-semibold">{player.name}</td>
+                          <td className="text-center py-3 px-2">{player.team}</td>
+                          <td className="text-center py-3 px-2 font-bold text-green-500">{player.points}</td>
+                          <td className="text-center py-3 px-2">{player.raids}</td>
+                          <td className="text-center py-3 px-2">{player.tackles}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </main>
       </div>
     </div>

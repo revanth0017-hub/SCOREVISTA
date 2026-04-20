@@ -9,6 +9,8 @@ const sportSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     // track whether a live admin is currently assigned to this sport
     adminAssigned: { type: Boolean, default: false },
+    // Player limits per team for each sport
+    playerLimit: { type: Number, default: 11, min: 1 },
   },
   { timestamps: true }
 );

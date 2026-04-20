@@ -82,7 +82,12 @@ export async function create(req, res, next) {
     });
     
     const io = req.app.get('io');
-    if (io) io.emit('highlightAdded', doc);
+    if (io) {
+      // Emit to all users (legacy)
+      io.emit('highlightAdded', doc);
+      // Also emit to sport-specific room
+      io.to(`sport:${sportId}`).emit('highlightAdded', doc);
+    }
     res.status(201).json({ success: true, data: doc, message: 'Highlight created' });
   } catch (err) {
     if (req.file?.path) unlinkSafe(req.file.path);

@@ -19,6 +19,7 @@ import {
   validateSportScoreDraft,
   type SportScoreDraft,
 } from '@/lib/sport-scoring';
+import { getFlowConfigBySport } from '@/lib/sport-assistant-config';
 
 export type ChatRole = 'assistant' | 'user';
 export interface ChatLine {
@@ -85,16 +86,19 @@ export function useAdminAssistant(sportId: string | null, sportSlug: string) {
     (action: FlowAction) => {
       stagedHighlightVideoRef.current = null;
       setFlow({ action, step: 1, data: {} });
+      
+      // Use sport-specific prompts
+      const config = getFlowConfigBySport(sportSlug);
+      
       const prompts: Record<FlowAction, string> = {
-        update_score:
-          'Step 1 — Pick a match below (or type Team A vs Team B). Next you will enter sport-specific scores for your admin sport.',
-        create_match: 'Step 1 — Enter name for Team A.',
-        manage_teams: 'Step 1 — Enter the new team name.',
-        add_highlights: 'Step 1 — Enter a short title for this highlight.',
+        update_score: config.updateScorePrompt,
+        create_match: config.createMatchPrompt,
+        manage_teams: config.manageTeamPrompt,
+        add_highlights: config.addHighlightPrompt,
       };
       pushAssistant(prompts[action]);
     },
-    [pushAssistant]
+    [pushAssistant, sportSlug]
   );
 
   const cancelFlow = useCallback(() => {
@@ -216,6 +220,56 @@ export function useAdminAssistant(sportId: string | null, sportSlug: string) {
             const teamALabel = found.teamA?.name || 'Team A';
             const teamBLabel = found.teamB?.name || 'Team B';
             const slug = (sportSlug || 'cricket').toLowerCase();
+            
+            // For cricket: add total overs step
+            if (slug === 'cricket') {
+              setFlow({
+                action,
+                step: 2,
+                data: {
+                  ...data,
+                  matchId: found._id,
+                  teamALabel,
+                  teamBLabel,
+                  adminSportSlug: slug,
+                  isCricket: true,
+                },
+              });
+              pushAssistant(
+                [
+                  `Match: ${teamALabel} vs ${teamBLabel}`,
+                  'Step 2 — Enter total overs for this match (e.g., 20 for T20, 50 for ODI)',
+                  'Type the number or cancel.',
+                ].join('\n')
+              );
+              return;
+            }
+
+            // For shuttle: add set selection step
+            if (slug === 'shuttle') {
+              setFlow({
+                action,
+                step: 2,
+                data: {
+                  ...data,
+                  matchId: found._id,
+                  teamALabel,
+                  teamBLabel,
+                  adminSportSlug: slug,
+                  isShuttle: true,
+                },
+              });
+              pushAssistant(
+                [
+                  `Match: ${teamALabel} vs ${teamBLabel}`,
+                  'Step 2 — Select which set to score: [A] [B] [C]',
+                  'Or type: Set A, Set B, Set C',
+                ].join('\n')
+              );
+              return;
+            }
+            
+            // For other sports: show regular form
             setFlow({
               action,
               step: 2,
@@ -231,8 +285,70 @@ export function useAdminAssistant(sportId: string | null, sportSlug: string) {
               [
                 `Match: ${teamALabel} vs ${teamBLabel}`,
                 `Step 2 — Scoring for **${slug}** (your admin sport).`,
-                'Use the sport-specific form below, set Live / Finished, then click **Review update**.',
+                'Use the sport-specific form below, set Live / Finished, then click **Update Score**.',
                 '(Chat text is optional here — the form is required.)',
+              ].join('\n')
+            );
+            return;
+          }
+
+          // Cricket totalOvers step
+          if (step === 2 && (data.isCricket)) {
+            if (!trimmed) {
+              pushAssistant('Enter number of overs (e.g., 20, 50) or type cancel.');
+              return;
+            }
+            const totalOvers = parseInt(trimmed);
+            if (isNaN(totalOvers) || totalOvers <= 0) {
+              pushAssistant('Enter a valid positive number of overs.');
+              return;
+            }
+            setFlow({
+              action,
+              step: 3,
+              data: {
+                ...data,
+                totalOvers,
+              },
+            });
+            pushAssistant(
+              [
+                `✓ Match set up for ${totalOvers} overs`,
+                'Step 3 — Real-time ball entry',
+                'Use ball buttons in the form below. Each click updates instantly.',
+                'Click "Undo Last Ball" if you make a mistake. When done, set status to Finished.',
+                'Previous match data will load automatically.',
+              ].join('\n')
+            );
+            return;
+          }
+
+          // Shuttle set selection step
+          if (step === 2 && (data.isShuttle)) {
+            if (!trimmed) {
+              pushAssistant('Select a set: [A] [B] [C] or type Set A, Set B, or Set C.');
+              return;
+            }
+            const setMatch = trimmed.toUpperCase().match(/[ABC]/)?.[0];
+            if (!setMatch || !['A', 'B', 'C'].includes(setMatch)) {
+              pushAssistant('Enter A, B, or C to select the set.');
+              return;
+            }
+            setFlow({
+              action,
+              step: 3,
+              data: {
+                ...data,
+                currentSet: setMatch,
+              },
+            });
+            pushAssistant(
+              [
+                `✓ Set ${setMatch} selected`,
+                'Step 3 — Real-time point entry',
+                'Use point buttons in the form below. Each click updates instantly.',
+                `Rally to 21 points. Click "Undo" if you make a mistake.`,
+                `When Set ${setMatch} finishes, select Set ${setMatch === 'A' ? 'B' : 'C'} or complete the match.`,
               ].join('\n')
             );
             return;
@@ -244,6 +360,42 @@ export function useAdminAssistant(sportId: string | null, sportSlug: string) {
           }
 
           if (step === 3) {
+            if (data.isCricket) {
+              if (trimmed.toLowerCase() === 'cancel' || isNegative(trimmed)) {
+                cancelFlow();
+              } else {
+                pushAssistant('For cricket, use the scoring form buttons above to save updates or start the next innings. Type cancel to exit the assistant.');
+              }
+              return;
+            }
+
+            if (data.isShuttle) {
+              if (trimmed.toLowerCase() === 'cancel' || isNegative(trimmed)) {
+                cancelFlow();
+              } else if (trimmed.toUpperCase().match(/[ABC]/)) {
+                const newSet = trimmed.toUpperCase().match(/[ABC]/)?.[0];
+                if (newSet && ['A', 'B', 'C'].includes(newSet)) {
+                  setFlow({
+                    action,
+                    step: 3,
+                    data: {
+                      ...data,
+                      currentSet: newSet,
+                    },
+                  });
+                  pushAssistant(
+                    [
+                      `✓ Set ${newSet} selected`,
+                      'Continue with real-time point entry.',
+                    ].join('\n')
+                  );
+                  return;
+                }
+              }
+              pushAssistant('For shuttle, use the point buttons [+A] [+B] in the form. Type a set letter (A/B/C) to switch sets. Type cancel to finish.');
+              return;
+            }
+
             if (isNegative(trimmed)) {
               cancelFlow();
               return;
@@ -310,6 +462,29 @@ export function useAdminAssistant(sportId: string | null, sportSlug: string) {
               pushAssistant('Both sides resolved to the same team — pick two different teams.');
               return;
             }
+
+            if (sportSlug.toLowerCase() === 'cricket') {
+              setFlow({
+                action,
+                step: 4,
+                data: {
+                  ...data,
+                  date: trimmed,
+                  teamAId: ta._id,
+                  teamBId: tb._id,
+                  teamAResolved: ta.name,
+                  teamBResolved: tb.name,
+                },
+              });
+              pushAssistant(
+                [
+                  'Step 4 — Enter total overs for this cricket match.',
+                  'Type a number such as 20 or 50.',
+                ].join('\n')
+              );
+              return;
+            }
+
             setFlow({
               action,
               step: 4,
@@ -334,7 +509,38 @@ export function useAdminAssistant(sportId: string | null, sportSlug: string) {
             );
             return;
           }
-          if (step === 4) {
+          if (step === 4 && sportSlug.toLowerCase() === 'cricket') {
+            if (!trimmed) {
+              pushAssistant('Enter number of overs, for example 20 or 50.');
+              return;
+            }
+            const totalOvers = parseInt(trimmed, 10);
+            if (isNaN(totalOvers) || totalOvers <= 0) {
+              pushAssistant('Enter a valid positive overs number.');
+              return;
+            }
+            setFlow({
+              action,
+              step: 5,
+              data: {
+                ...data,
+                totalOvers,
+              },
+            });
+            pushAssistant(
+              [
+                'Step 5 — Summary',
+                `${String(data.teamAResolved)} vs ${String(data.teamBResolved)}`,
+                `Date: ${String(data.date)}`,
+                `Total overs: ${totalOvers}`,
+                'Sport: cricket',
+                '',
+                'Create this match? (yes / no)',
+              ].join('\n')
+            );
+            return;
+          }
+          if (step === 4 && sportSlug.toLowerCase() !== 'cricket') {
             if (isNegative(trimmed)) {
               cancelFlow();
               return;
@@ -351,6 +557,29 @@ export function useAdminAssistant(sportId: string | null, sportSlug: string) {
               status: 'upcoming',
               scoreA: 0,
               scoreB: 0,
+            });
+            pushAssistant('Match created ✓ It will appear on the schedule and via live sockets.');
+            setFlow(null);
+            return;
+          }
+          if (step === 5 && sportSlug.toLowerCase() === 'cricket') {
+            if (isNegative(trimmed)) {
+              cancelFlow();
+              return;
+            }
+            if (!isAffirmative(trimmed)) {
+              pushAssistant('Reply yes to create or no to cancel.');
+              return;
+            }
+            await api.postJson('/api/matches', {
+              sportId,
+              teamAId: data.teamAId,
+              teamBId: data.teamBId,
+              date: data.date,
+              status: 'upcoming',
+              scoreA: 0,
+              scoreB: 0,
+              totalOvers: data.totalOvers,
             });
             pushAssistant('Match created ✓ It will appear on the schedule and via live sockets.');
             setFlow(null);
@@ -535,6 +764,7 @@ export function useAdminAssistant(sportId: string | null, sportSlug: string) {
   return {
     messages,
     flow,
+    setFlow,
     busy,
     startFlow,
     submitUserText,

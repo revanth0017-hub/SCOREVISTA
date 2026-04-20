@@ -12,8 +12,10 @@ import { errorHandler } from './middleware/errorHandler.js';
 import authRoutes from './routes/auth.js';
 import sportsRoutes from './routes/sports.js';
 import teamsRoutes from './routes/teams.js';
+import playersRoutes from './routes/players.js';
 import matchesRoutes from './routes/matches.js';
 import highlightsRoutes from './routes/highlights.js';
+import seedSportLimits from './seeds/sportLimits.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -46,6 +48,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/sports', sportsRoutes);
 app.use('/api/teams', teamsRoutes);
+app.use('/api/players', playersRoutes);
 app.use('/api/matches', matchesRoutes);
 app.use('/api/highlights', highlightsRoutes);
 
@@ -53,6 +56,9 @@ app.use(errorHandler);
 
 async function start() {
   await connectDB();
+  // Seed sport player limits
+  await seedSportLimits();
+  
   const server = http.createServer(app);
   const io = new SocketIOServer(server, {
     cors: {

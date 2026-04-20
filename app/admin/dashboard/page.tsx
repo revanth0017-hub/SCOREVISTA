@@ -381,12 +381,6 @@ function AdminDashboardContent() {
               <h1 className="text-2xl font-bold">Manage {sport}</h1>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/admin/assistant?sport=${encodeURIComponent(sport)}`}>
-                  <MessageSquare className="w-4 h-4 mr-2" />
-                  Switch to Assistant Mode
-                </Link>
-              </Button>
               <Button
                 variant="destructive"
                 size="sm"

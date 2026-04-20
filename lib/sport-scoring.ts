@@ -38,17 +38,11 @@ export function getScoreConfigBySport(sportSlug: string): SportScoreFormConfig {
   const s = (sportSlug || '').toLowerCase();
 
   if (s === 'cricket') {
+    // Cricket: NO manual input fields. Only event-based buttons.
     return {
       sportSlug: 'cricket',
-      label: 'Cricket (runs / wickets / overs)',
-      fields: [
-        { id: 'runsA', label: 'Team A — Runs', type: 'number' },
-        { id: 'wicketsA', label: 'Team A — Wickets', type: 'number' },
-        { id: 'oversA', label: 'Team A — Overs (e.g. 15.2)', type: 'text', placeholder: '15.2' },
-        { id: 'runsB', label: 'Team B — Runs', type: 'number' },
-        { id: 'wicketsB', label: 'Team B — Wickets', type: 'number' },
-        { id: 'oversB', label: 'Team B — Overs', type: 'text', placeholder: '20.0' },
-      ],
+      label: 'Cricket — Event-Based Scoring',
+      fields: [], // NO manual fields - cricket uses only quick buttons
     };
   }
 
@@ -144,13 +138,10 @@ export function validateSportScoreDraft(sportSlug: string, draft: SportScoreDraf
   const num = (v: unknown) => (v === '' || v === undefined ? NaN : Number(v));
 
   if (s === 'cricket') {
-    for (const k of ['runsA', 'runsB', 'wicketsA', 'wicketsB'] as const) {
-      const n = num(draft[k]);
-      if (Number.isNaN(n) || n < 0) return `${k} must be a non-negative number`;
-    }
-    if (!String(draft.oversA || '').trim() || !String(draft.oversB || '').trim()) {
-      return 'Overs are required for both teams (e.g. 15.2)';
-    }
+    // Cricket: Event-based only. Form provides cricket ball events, not manual fields.
+    // Validation passes automatically - backend will process ball events.
+    if (!draft.cricketInnings) return 'Cricket innings data is required (use ball buttons)';
+    if (!Array.isArray(draft.cricketInnings.balls)) return 'Cricket ball events must be an array';
     return null;
   }
 
@@ -192,10 +183,18 @@ export function formatScorePreview(
   const lines: string[] = [];
 
   if (s === 'cricket') {
-    lines.push(
-      `${teamA} ${draft.runsA}/${draft.wicketsA} (${draft.oversA} overs)`,
-      `${teamB} ${draft.runsB}/${draft.wicketsB} (${draft.oversB} overs)`
-    );
+    const innings = draft.cricketInnings as any;
+    if (innings) {
+      lines.push(
+        `${teamA} — Ball-by-ball entry`,
+        `Runs: ${innings.runs}`,
+        `Wickets: ${innings.wickets}`,
+        `Overs: ${innings.overs}`,
+        `Events recorded: ${innings.balls?.length || 0}`
+      );
+    } else {
+      lines.push(`${teamA} — Cricket event data`);
+    }
   } else if (s === 'football') {
     lines.push(`${teamA} ${draft.goalsA} - ${draft.goalsB} ${teamB}`);
   } else if (s === 'basketball') {
@@ -231,18 +230,35 @@ export function buildScoreUpdatePayload(sportSlug: string, draft: SportScoreDraf
   const status = draft.status || 'live';
 
   if (s === 'cricket') {
-    const runsA = Number(draft.runsA);
-    const runsB = Number(draft.runsB);
+    // Cricket: Pass event-based innings data
+    const innings = draft.cricketInnings as any || { runs: 0, wickets: 0, overs: '0.0', balls: [] };
+    const currentInningsNum = innings.currentInningsNum || 1;
+    const target = innings.target;
+    const scoreA = currentInningsNum === 1 ? innings.runs : 0;
+    const scoreB = currentInningsNum === 2 ? innings.runs : 0;
+    const oversA = currentInningsNum === 1 ? innings.overs : '0.0';
+    const oversB = currentInningsNum === 2 ? innings.overs : '0.0';
     return {
-      scoreA: runsA,
-      scoreB: runsB,
-      oversA: String(draft.oversA || '').trim(),
-      oversB: String(draft.oversB || '').trim(),
+      scoreA,
+      scoreB,
+      oversA,
+      oversB,
       status,
       sportScore: {
         sportSlug: 'cricket',
-        teamA: { runs: runsA, wickets: Number(draft.wicketsA), overs: String(draft.oversA || '').trim() },
-        teamB: { runs: runsB, wickets: Number(draft.wicketsB), overs: String(draft.oversB || '').trim() },
+        currentInningsNum,
+        innings: [
+          {
+            inningsNum: currentInningsNum,
+            runs: innings.runs,
+            wickets: innings.wickets,
+            overs: innings.overs,
+            balls: innings.balls || [],
+            status: status === 'live' ? 'live' : 'completed',
+            target,
+            totalOvers: innings.totalOvers || 20,
+          },
+        ],
       },
     };
   }

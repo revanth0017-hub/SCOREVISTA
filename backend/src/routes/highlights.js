@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as highlightController from '../controllers/highlightController.js';
 import { authenticate } from '../middleware/auth.js';
-import { requireAdmin } from '../middleware/roleAuth.js';
+import { requireAdmin, requireAdminSport, adminSportMatch } from '../middleware/roleAuth.js';
 import { uploadVideo } from '../middleware/upload.js';
 
 const router = Router();
@@ -16,8 +16,8 @@ router.post(
   uploadVideo.single('video'),
   highlightController.create
 );
-router.patch('/:id', authenticate, requireAdmin, highlightController.update);
-router.put('/:id', authenticate, requireAdmin, highlightController.update);
+router.patch('/:id', authenticate, requireAdmin, adminSportMatch(), highlightController.update);
+router.put('/:id', authenticate, requireAdmin, adminSportMatch(), highlightController.update);
 router.delete('/:id', authenticate, requireAdmin, highlightController.remove);
 
 export default router;

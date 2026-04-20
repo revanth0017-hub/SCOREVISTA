@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Edit2, Trash2, Calendar, Plus, Save, X } from 'lucide-react';
+import { Edit2, Trash2, Calendar, Plus, Save, X, Activity } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -323,6 +324,16 @@ export function AdminManageMatches({ sport, sportIcon }: AdminManageMatchesProps
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex gap-2">
+                          <Link href={`/admin/${sport.toLowerCase()}/matches/${match.id}`}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-green-600 hover:bg-green-500/10 border-green-500/30 bg-transparent"
+                              disabled={isLoading}
+                            >
+                              <Activity className="w-4 h-4 text-green-600" />
+                            </Button>
+                          </Link>
                           <Button
                             size="sm"
                             variant="outline"

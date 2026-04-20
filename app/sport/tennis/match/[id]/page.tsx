@@ -51,22 +51,23 @@ export default function TennisMatchDetailPage() {
 
           <div className="p-6 md:p-8 max-w-7xl mx-auto">
             <Card className="bg-card/50 border-border shadow-md">
-            <CardHeader>
-              <CardTitle>Set Results</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {SET_SCORES.map((set) => (
-                <div key={set.set} className="flex items-center justify-between p-4 bg-background rounded-lg">
-                  <span className="font-semibold">Set {set.set}</span>
-                  <div className="flex items-center gap-4">
-                    <span className="font-bold">{set.team1}</span>
-                    <span>-</span>
-                    <span className="font-bold">{set.team2}</span>
+              <CardHeader>
+                <CardTitle>Set Results</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {SET_SCORES.map((set) => (
+                  <div key={set.set} className="flex items-center justify-between p-4 bg-background rounded-lg">
+                    <span className="font-semibold">Set {set.set}</span>
+                    <div className="flex items-center gap-4">
+                      <span className="font-bold">{set.team1}</span>
+                      <span>-</span>
+                      <span className="font-bold">{set.team2}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
         </main>
       </div>
     </div>

@@ -1,0 +1,23 @@
+'use client';
+
+import { AdminMatchScorePage } from '@/components/admin-match-score-page';
+
+interface PageProps {
+  params: {
+    matchId: string;
+  };
+}
+
+const SPORT_EMOJI: Record<string, string> = {
+  cricket: '🏏',
+  football: '⚽',
+  volleyball: '🏐',
+  basketball: '🏀',
+  kabaddi: '👥',
+  shuttle: '🏸',
+  tennis: '🎾',
+};
+
+export default function ShuttleMatchScorePage({ params }: PageProps) {
+  return <AdminMatchScorePage matchId={params.matchId} sportSlug="shuttle" sportIcon={SPORT_EMOJI.shuttle} />;
+}

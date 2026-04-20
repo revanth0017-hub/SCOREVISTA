@@ -22,6 +22,7 @@ import {
 } from '@/lib/assistant-recent-matches';
 import { AssistantLivePreview } from '@/components/admin-assistant/live-preview';
 import { AssistantSportScoreForm } from '@/components/admin-assistant/sport-score-form';
+import { AdminAssistantPlayerWorkflow } from '@/components/admin-assistant-player-workflow';
 import {
   Loader2,
   MessageSquare,
@@ -110,10 +111,7 @@ interface AdminAssistantPanelProps {
 }
 
 export function AdminAssistantPanel({ sportId, sportSlug, sportLoading }: AdminAssistantPanelProps) {
-  const { messages, flow, busy, startFlow, submitUserText, submitSportScoreDraft, cancelFlow } = useAdminAssistant(
-    sportId,
-    sportSlug
-  );
+  const [showPlayerWorkflow, setShowPlayerWorkflow] = useState(false);
   const [text, setText] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPick, setVideoPick] = useState<File | null>(null);
@@ -127,6 +125,17 @@ export function AdminAssistantPanel({ sportId, sportSlug, sportLoading }: AdminA
   const [recentBump, setRecentBump] = useState(0);
 
   const speech = useSpeechRecognition((t) => setText((prev) => (prev ? `${prev} ${t}` : t)));
+
+  const {
+    messages,
+    flow,
+    setFlow,
+    busy,
+    startFlow,
+    cancelFlow,
+    submitUserText,
+    submitSportScoreDraft,
+  } = useAdminAssistant(sportId || '', sportSlug);
 
   const recentMatches = useMemo((): RecentMatchEntry[] => {
     if (!sportId) return [];
@@ -398,15 +407,20 @@ export function AdminAssistantPanel({ sportId, sportSlug, sportLoading }: AdminA
                 </div>
               )}
 
-              {flow.action === 'update_score' && flow.step === 2 && flow.data.matchId && (
-                <AssistantSportScoreForm
-                  key={`${sportSlug}-${String(flow.data.matchId)}`}
-                  sportSlug={sportSlug}
-                  teamALabel={String(flow.data.teamALabel || 'Team A')}
-                  teamBLabel={String(flow.data.teamBLabel || 'Team B')}
-                  disabled={busy}
-                  onReview={(draft) => submitSportScoreDraft(draft)}
-                />
+              {flow.action === 'update_score' && flow.data.matchId && (
+                ((flow.data.isCricket && flow.step === 3) || (flow.data.isShuttle && flow.step === 3) || (!flow.data.isCricket && !flow.data.isShuttle && flow.step === 2)) && (
+                  <AssistantSportScoreForm
+                    key={`${sportSlug}-${String(flow.data.matchId)}-${flow.step}-${flow.data.refreshInnings || 0}-${flow.data.currentSet || ''}`}
+                    sportSlug={sportSlug}
+                    teamALabel={String(flow.data.teamALabel || 'Team A')}
+                    teamBLabel={String(flow.data.teamBLabel || 'Team B')}
+                    matchId={String(flow.data.matchId)}
+                    totalOvers={typeof flow.data.totalOvers === 'number' ? flow.data.totalOvers : undefined}
+                    disabled={busy}
+                    onReview={(draft) => submitSportScoreDraft(draft)}
+                    onInningsUpdated={() => setFlow((f) => f ? { ...f, data: { ...f.data, refreshInnings: (f.data.refreshInnings || 0) + 1 } } : null)}
+                  />
+                )
               )}
 
               {flow.action === 'add_highlights' && flow.step === 2 && (
@@ -549,7 +563,7 @@ export function AdminAssistantPanel({ sportId, sportSlug, sportLoading }: AdminA
               )}
 
               {/* Yes / No */}
-              {((flow.action === 'update_score' && flow.step === 3) ||
+              {((flow.action === 'update_score' && flow.step === 3 && !flow.data.isCricket) ||
                 (flow.action === 'create_match' && flow.step === 4) ||
                 (flow.action === 'manage_teams' && flow.step === 3) ||
                 (flow.action === 'add_highlights' && flow.step === 5)) && (
